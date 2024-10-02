@@ -49,7 +49,7 @@ namespace MealPlaner.Services
         {
             Console.WriteLine("____________________\nstarted filtering by ingredient");
 
-            if (fast)
+            if (!fast)
             {
                 Stopwatch stopwatch = new Stopwatch();
                 stopwatch.Start();
@@ -92,7 +92,7 @@ namespace MealPlaner.Services
                         //recipeIngredient.IndexOf(ingredient, StringComparison.OrdinalIgnoreCase) >= 0));
                 }
                 double matchPercentage = (double)matchCount / recipe.ingredients_raw.Count * 100;
-                return matchPercentage >= 70;
+                return matchPercentage >= 55;
             }).ToList();
         }
 
