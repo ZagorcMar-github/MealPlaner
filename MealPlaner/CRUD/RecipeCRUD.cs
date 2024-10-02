@@ -1,5 +1,6 @@
 ﻿using MealPlaner.CRUD.Interfaces;
 using MealPlaner.Models;
+using MealPlaner.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -7,6 +8,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using MongoDB.Driver;
+using System.Diagnostics;
 
 
 
@@ -76,6 +78,7 @@ namespace MealPlaner.CRUD
 
         public async Task<(bool checkRquest, PagedQuerryResult result)> GetRecipes(QueryParams queryParams,int page, int pageSize)
         {
+            ParallelIngredientFilter parallelFilter = new(_recipesCollection) { };
             List<Recipe> recipes = new List<Recipe>();
             PagedQuerryResult querryResult = new PagedQuerryResult { };
             List<Recipe> keywordFilteredResult = new List<Recipe>();
@@ -86,7 +89,7 @@ namespace MealPlaner.CRUD
 
 
             string cacheKey = $"{CacheKeyPrefix}{string.Join("_", queryParams.Ingredients.OrderBy(i => i))}";
-            if (pageSize > 1000)
+            if (pageSize > 100)
             {
                 return (false, querryResult);
             }
@@ -117,16 +120,18 @@ namespace MealPlaner.CRUD
 
             if (!queryParams.Keywords.IsNullOrEmpty())
             {
-            var filter = Builders<Recipe>.Filter.All(x => x.Keywords, queryParams.Keywords);
-                keywordFilteredResult = await _recipesCollection.Find(filter).Skip((page - 1) * pageSize)
-                        .Limit(pageSize)
+                Stopwatch stopWatch = new Stopwatch();
+                stopWatch.Start();
+                var filter = Builders<Recipe>.Filter.All(x => x.Keywords, queryParams.Keywords);
+                keywordFilteredResult = await _recipesCollection.Find(filter)
                         .ToListAsync();
 
              recipes.AddRange(keywordFilteredResult); // doda vse elemente medtem ko add doda samo enga inherently
              totalItems = (int)await _recipesCollection.CountDocumentsAsync(filter);
              totalPages = (int)Math.Ceiling((double)totalItems / pageSize);
-
-            Console.WriteLine("came");
+             stopWatch.Stop();
+                TimeSpan ts = stopWatch.Elapsed;
+                Console.WriteLine($"time spent filteing by keyword : {ts}");
             }
             else
             {
@@ -137,10 +142,13 @@ namespace MealPlaner.CRUD
             }
 
 
-
             List<Recipe> list = recipes;
             if (!queryParams.Ingredients.IsNullOrEmpty()) {
-                list = await FilterByIngridents(keywordFilteredResult, queryParams);
+                Stopwatch stopwatch2 = new Stopwatch { };
+                stopwatch2.Start();
+                list = await parallelFilter.FilterByIngridents(keywordFilteredResult, queryParams,true);
+                stopwatch2.Stop();
+                Console.WriteLine($"Time spent filtering by ingredient: {stopwatch2.Elapsed}");
             }
             
 
@@ -169,38 +177,7 @@ namespace MealPlaner.CRUD
         {
             throw new NotImplementedException();
         }
-        public async Task <List<Recipe>> FilterByIngridents(List<Recipe> recipes,QueryParams queryParams) 
-        {
-            var ingredientFilters = queryParams.Ingredients
-        .Select(ingredient => Builders<Recipe>.Filter.Regex(
-            x => x.ingredients_raw,
-            new MongoDB.Bson.BsonRegularExpression(ingredient, "i"))) 
-        .ToList();
-
-
-            var filter = Builders<Recipe>.Filter.Or(ingredientFilters);
-
-
-             recipes = await _recipesCollection.Find(filter)
-                .ToListAsync();
-
-
-            var filteredRecipes =  FilterRecipesByIngredientMatch(recipes, queryParams.Ingredients);
-            Console.WriteLine("completed filtering by ingredient");
-            return filteredRecipes;
-        }
-        private List<Recipe> FilterRecipesByIngredientMatch(List<Recipe> recipes, string[] queryIngredients)
-        {
-            return recipes.Where(recipe =>
-            {
-                int matchCount = queryIngredients.Count(ingredient =>
-                    recipe.ingredients_raw.Any(recipeIngredient =>
-                        recipeIngredient.IndexOf(ingredient, StringComparison.OrdinalIgnoreCase) >= 0));
-
-                double matchPercentage = (double)matchCount / queryIngredients.Length * 100;
-                return matchPercentage >= 70;
-            }).ToList();
-        }
+        
     }
     
 }
