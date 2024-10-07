@@ -4,11 +4,15 @@ using MealPlaner.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using MongoDB.Driver;
+using System.ComponentModel;
 using System.Diagnostics;
+using System.Linq;
+using System.Reflection;
 
 
 
@@ -76,7 +80,7 @@ namespace MealPlaner.CRUD
            
         }
 
-        public async Task<(bool checkRquest, PagedQuerryResult result)> GetRecipes(QueryParams queryParams,int page, int pageSize)
+        public async Task<(bool checkRquest, PagedQuerryResult result)> GetRecipes(QueryParams queryParams,int page=1, int pageSize=10)
         {
             ParallelIngredientFilter parallelFilter = new(_recipesCollection) { };
             List<Recipe> recipes = new List<Recipe>();
@@ -85,10 +89,28 @@ namespace MealPlaner.CRUD
             int totalItems = 0;
             int totalPages = 0;
 
+            
+            var cachingKeyString = "";
+            Type type= queryParams.GetType();
+            foreach (PropertyInfo property in type.GetProperties())
+            {
+                var propertyValue= property.GetValue(queryParams, null);
+                if (propertyValue != null)
+                {
+                    Type typeValue = property.PropertyType;
+                    if (typeValue.IsArray)
+                    {
+                        string[] castAraay = (string[])propertyValue;
+                        cachingKeyString += $"_{string.Join("_", castAraay.OrderBy(i => i))}";
+                    }
+                    else 
+                    {
+                        cachingKeyString += $"_{propertyValue}";
+                    }
+                }
+            }
 
-
-
-            string cacheKey = $"{CacheKeyPrefix}{string.Join("_", queryParams.Ingredients.OrderBy(i => i))}";
+            string cacheKey = $"{CacheKeyPrefix}{cachingKeyString}";
             if (pageSize > 100)
             {
                 return (false, querryResult);
@@ -113,42 +135,59 @@ namespace MealPlaner.CRUD
             
             }
 
+            if (!queryParams.Keywords.IsNullOrEmpty() && queryParams.Ingredients.IsNullOrEmpty())
+            {
 
-
-           
-            
-
-            if (!queryParams.Keywords.IsNullOrEmpty())
+                keywordFilteredResult= parallelFilter.GetKeywordFilteredRecipes(_recipesCollection, queryParams.Keywords);
+                recipes.AddRange(keywordFilteredResult); // doda vse elemente medtem ko add doda samo enga inherently
+            }
+            else if (queryParams.Keywords.IsNullOrEmpty() && !queryParams.Ingredients.IsNullOrEmpty())
             {
                 Stopwatch stopWatch = new Stopwatch();
                 stopWatch.Start();
-                var filter = Builders<Recipe>.Filter.All(x => x.Keywords, queryParams.Keywords);
-                keywordFilteredResult = await _recipesCollection.Find(filter)
-                        .ToListAsync();
+                keywordFilteredResult = parallelFilter.GetIngredientFilteredRecipes(_recipesCollection, queryParams.Ingredients);
+                stopWatch.Stop();
+                TimeSpan ts2 = stopWatch.Elapsed;
+                Console.WriteLine($"time spent filtering by ingredient with linq : {ts2.TotalSeconds}");
 
-             recipes.AddRange(keywordFilteredResult); // doda vse elemente medtem ko add doda samo enga inherently
-             totalItems = (int)await _recipesCollection.CountDocumentsAsync(filter);
-             totalPages = (int)Math.Ceiling((double)totalItems / pageSize);
-             stopWatch.Stop();
-                TimeSpan ts = stopWatch.Elapsed;
-                Console.WriteLine($"time spent filteing by keyword : {ts}");
+                recipes.AddRange(keywordFilteredResult);
+
             }
-            else
+            else if (!queryParams.Keywords.IsNullOrEmpty() && !queryParams.Ingredients.IsNullOrEmpty())
             {
-                keywordFilteredResult = await _recipesCollection.Find(Builders<Recipe>.Filter.Empty)
-                .ToListAsync();
+                //keywordFiltering
+                
+                keywordFilteredResult = parallelFilter.GetKeywordFilteredRecipes(_recipesCollection, queryParams.Keywords);
+                
+
 
                 recipes.AddRange(keywordFilteredResult);
             }
-
+            else 
+            {
+                var queryableCollection = _recipesCollection.AsQueryable();
+                List<Recipe> result = new List<Recipe>();
+                result = queryableCollection.ToList();
+                recipes.AddRange(result);
+                
+            }
 
             List<Recipe> list = recipes;
             if (!queryParams.Ingredients.IsNullOrEmpty()) {
+                //applying filtered on results that are allredy in memory
                 Stopwatch stopwatch2 = new Stopwatch { };
                 stopwatch2.Start();
                 list = await parallelFilter.FilterByIngridents(keywordFilteredResult, queryParams,true);
                 stopwatch2.Stop();
-                Console.WriteLine($"Time spent filtering by ingredient: {stopwatch2.Elapsed}");
+                Console.WriteLine($"Time spent filtering by ingredient in memory: {stopwatch2.Elapsed}");
+            }
+            if (!queryParams.ExcludeIngredients.IsNullOrEmpty()) 
+            {
+                Stopwatch stopwatch3 = new Stopwatch { };
+                stopwatch3.Start();
+                list =  parallelFilter.FilterByExcludedIngredients(list, queryParams.ExcludeIngredients);
+                stopwatch3.Stop();
+                Console.WriteLine($"Time spent filtering by excluded in memory: {stopwatch3.Elapsed}");
             }
             
 
@@ -180,10 +219,6 @@ namespace MealPlaner.CRUD
         
     }
     
-}
-public class NotFoundException : Exception
-{
-    public NotFoundException(string message) : base(message) { }
 }
 
 
