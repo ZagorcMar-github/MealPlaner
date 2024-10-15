@@ -1,4 +1,5 @@
 
+using AspNetCore.Identity.MongoDbCore;
 using MealPlaner.authentication;
 using MealPlaner.CRUD;
 using MealPlaner.CRUD.Interfaces;
@@ -90,14 +91,17 @@ builder.Services.AddControllers().AddJsonOptions(options =>
 });
 
 
-
+//BackgroundTaskQueue : IBackgroundTaskQueue
 builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<InMemoryDataRefresh>();
+builder.Services.AddSingleton<IBackgroundTaskQueue, BackgroundTaskQueue>();
 builder.Services.AddScoped<IRecipeCRUD, RecipeCRUD>();
 builder.Services.AddScoped<IUserCRUD, UserCRUD>();
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<HeaderRequestDecoder>();
 //builder.Services.AddScoped<APIKeyAuthFilter>();
-
+builder.Services.AddHostedService<QueuedHostedService>();
+builder.Services.AddHostedService<LoadDataInMemoryOnStart>();
 
 var app = builder.Build();
 

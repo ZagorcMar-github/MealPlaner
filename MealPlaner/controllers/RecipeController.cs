@@ -2,29 +2,37 @@
 using MealPlaner.CRUD.Interfaces;
 using MealPlaner.Identity;
 using MealPlaner.Models;
+using MealPlaner.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using System.Diagnostics;
 using System.IdentityModel.Tokens.Jwt;
 
 
 namespace MealPlaner.controllers
 {
-    
+
     [ApiController]
     //[ServiceFilter(typeof(APIKeyAuthFilter))]
     [Route("api/[controller]")]
     public class RecipeController : Controller
     {
         private IRecipeCRUD _recipeCRUD;
+        private InMemoryDataRefresh _inMemoryDataRefresh;
 
         private ILogger<RecipeController> _logger;
-        public RecipeController(ILogger<RecipeController> logger, IRecipeCRUD recipeCRUD)
+        private IBackgroundTaskQueue _backgroundTaskQueue;
+
+        public RecipeController(IRecipeCRUD recipeCRUD, InMemoryDataRefresh inMemoryDataRefresh, ILogger<RecipeController> logger, IBackgroundTaskQueue backgroundTaskQueue)
         {
             _recipeCRUD = recipeCRUD;
+            _inMemoryDataRefresh = inMemoryDataRefresh;
             _logger = logger;
+            _backgroundTaskQueue = backgroundTaskQueue;
         }
-        [Authorize(Policy = CustomIdentityConstants.UserSubtierPolicyName)]
+
+        //[Authorize(Policy = CustomIdentityConstants.UserSubtierPolicyName)]
         [HttpGet("getRecipe/{id}")]
         public async Task<IActionResult> GetRecipe(int id)
         {
@@ -32,11 +40,11 @@ namespace MealPlaner.controllers
             try
             {
 
-                Recipe result = await _recipeCRUD.GetRecipe(id);
-                if (result ==null){
-                return NotFound($"Recipe with id {id} not found.");
+                RecipeDto result = await _recipeCRUD.GetRecipe(id);
+                if (result == null) {
+                    return NotFound($"Recipe with id {id} not found.");
                 }
-                    return Ok(result);
+                return Ok(result);
             }
             catch (Exception ex)
             {
@@ -46,57 +54,77 @@ namespace MealPlaner.controllers
 
         }
         [HttpPut("UpdateRecipe")]
-        public async Task<IActionResult> UpdateRecipe(Recipe recipe)
+        public async Task<IActionResult> UpdateRecipe(RecipeUpdateDto recipe)
         {
             try
             {
-                await _recipeCRUD.UpdateRecipe(recipe);
-                return Ok();
+                var result= await _recipeCRUD.UpdateRecipe(recipe);
+                if (result == null)
+                {
+                    return BadRequest("No recipe with such id");
+                }
+                _backgroundTaskQueue.QueueBackgroundWorkItem(async token =>
+                {
+                    await _inMemoryDataRefresh.ReloadData();
+                });
+
+                return Ok(result);
             }
             catch (Exception ex)
             {
                 _logger.LogError("error");
-                return BadRequest(ex);
+                return StatusCode(StatusCodes.Status500InternalServerError, "An error occurred while processing your request.");
             }
         }
+        [Authorize]
         [HttpDelete("DeleteRecipe")]
         public async Task<IActionResult> DeleteRecipe(int id)
         {
             try
             {
-                await _recipeCRUD.DeleteRecipe(id);
-
-                return Ok();
+                var result= await _recipeCRUD.DeleteRecipe(id);
+                _backgroundTaskQueue.QueueBackgroundWorkItem(async token =>
+                {
+                    await _inMemoryDataRefresh.ReloadData();
+                });
+                return Ok(result);
             }
             catch (Exception ex)
             {
                 _logger.LogError("error");
                 return BadRequest(ex);
             }
+            finally { }
         }
         [HttpPost("CreateRecipe")]
-        public async Task<IActionResult> CreateRecipe(Recipe recipe)
+        public async Task<IActionResult> CreateRecipe([FromBody] RecipeDto recipe)
         {
             try
             {
-                await _recipeCRUD.CreateRecipe(recipe);
+                var result = await _recipeCRUD.CreateRecipe(recipe);
+                var response = Ok(result);
 
-                return Ok("recipe Inserted");
+
+                _backgroundTaskQueue.QueueBackgroundWorkItem(async token =>
+                {
+                    await _inMemoryDataRefresh.ReloadData();
+                });
+                return response;
             }
             catch (Exception ex)
             {
-                _logger.LogError("error");
+                _logger.LogError("Error creating recipe: {Message}", ex.Message);
                 return BadRequest(ex);
             }
         }
-        [Authorize]
+        //[Authorize]
         [EnableRateLimiting("bucketPerUser")]
-        [HttpPost("generateMealPlan")]
-        public async Task<IActionResult> GenerateMealPlan()
+        [HttpPost("GenerateMealPlan")]
+        public async Task<IActionResult> GenerateMealPlan([FromBody] DailyMealsDto meals)
         {
             try
             {
-                await _recipeCRUD.GenerateMealPlan();
+                await _recipeCRUD.GenerateMealPlan(meals);
 
                 return Ok("rara");
             }
@@ -106,12 +134,12 @@ namespace MealPlaner.controllers
                 return BadRequest(ex);
             }
         }
-        [HttpGet("getRecipes")]
-        public async Task<IActionResult> getRecipes([FromQuery]QueryParams querryParams,int page,int pageLimit )
+        [HttpGet("getFilteredRecipes")]
+        public async Task<IActionResult> GetFilteredRecipes([FromQuery] QueryParams querryParams, int page, int pageLimit)
         {
             try
             {
-                (bool succes,PagedQuerryResult queryResult)= await _recipeCRUD.GetRecipes(querryParams, page,pageLimit);
+                (bool succes, PagedQuerryResult queryResult) = await _recipeCRUD.GetFilteredRecipes(querryParams, page, pageLimit);
                 return Ok(queryResult);
             }
             catch (Exception ex)
@@ -122,6 +150,40 @@ namespace MealPlaner.controllers
             }
 
         }
+        [HttpGet("getRecipes")]
+        public async Task<IActionResult> GetRecipes([FromQuery] int page, int pageLimit)
+        {
+            try
+            {
+                if (pageLimit > 100)
+                {
+                    return BadRequest("please enter a page limit under 100");
+                }
+                (bool succes, PagedQuerryResult queryResult) = _recipeCRUD.GetRecipes(page, pageLimit);
+                if (succes)
+                {
+                    return Ok(queryResult);
 
+                }
+                else
+                {
+                    return BadRequest("recipes were not found");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex.Message);
+                return BadRequest("internal server error");
+                throw;
+            }
+
+        }
+        private void DataRefresh() 
+        {
+            _backgroundTaskQueue.QueueBackgroundWorkItem(async token =>
+            {
+                await _inMemoryDataRefresh.ReloadData();
+            });
+        }
     }
 }

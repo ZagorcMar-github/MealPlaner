@@ -1,4 +1,5 @@
-﻿using System.Text.Json.Serialization;
+﻿using Microsoft.AspNetCore.Mvc;
+using System.Text.Json.Serialization;
 
 namespace MealPlaner.Models
 {
@@ -12,7 +13,13 @@ namespace MealPlaner.Models
     [JsonSerializable(typeof(User))]
     [JsonSerializable(typeof(List<Recipe>))]
     [JsonSerializable(typeof(PagedQuerryResult))]
-
+    [JsonSerializable(typeof(RecipeDto))]
+    [JsonSerializable(typeof(RecipeUpdateDto))]
+    [JsonSerializable(typeof(ValidationProblemDetails))]
+    [JsonSerializable(typeof(DailyMealCharacteristics))]
+    [JsonSerializable(typeof(NutritionalGoals))]
+    [JsonSerializable(typeof(DailyMealsDto))]
+    [JsonSerializable(typeof(List<DailyMealCharacteristics>))]
     internal partial class AppJsonSerializerContext : JsonSerializerContext
     {
     }

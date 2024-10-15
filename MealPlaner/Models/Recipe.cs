@@ -11,7 +11,7 @@ namespace MealPlaner.Models
         [BsonId]
         [BsonRepresentation(BsonType.ObjectId)]
         public string? Id { get; set; }
-        public int RecipeId { get; set; }
+        public required int RecipeId { get; set; }
         public string Name { get; set; }
         public string CookTime { get; set; }
         public string PrepTime { get; set; }

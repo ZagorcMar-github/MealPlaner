@@ -18,6 +18,7 @@ namespace MealPlaner.Services
         {
             _recipesCollection = recipesCollection;
         }
+
         public List<Recipe> FilterByExcludedIngredients(List<Recipe> recipes, string[] queryIngredients) 
         {
             int matchCount = 0;
@@ -27,6 +28,30 @@ namespace MealPlaner.Services
                 matchCount = recipeIngredientSet.Intersect(ingredientSet).Count();
                 Console.WriteLine(matchCount);
                 return (matchCount == 0);
+            }).ToList();
+
+        }
+        public List<Recipe> FilterByKeywords(List<Recipe> recipes, string[] queryKeywords)
+        {
+            int matchCount = 0;
+            var ingredientSet = new HashSet<string>(queryKeywords, StringComparer.OrdinalIgnoreCase);
+            return recipes.Where(recipe => {
+                var recipeIngredientSet = new HashSet<string>(recipe.Keywords, StringComparer.OrdinalIgnoreCase);
+                matchCount = recipeIngredientSet.Intersect(ingredientSet).Count();
+                //Console.WriteLine($"match count:{matchCount} intersectCount: {queryKeywords.Count()}");
+                return (matchCount == queryKeywords.Count());
+            }).ToList();
+
+        }
+        public List<Recipe> GetRecipesThatInclude(List<Recipe> recipes, string[] ingredients)
+        {
+            int matchCount = 0;
+            var ingredientSet = new HashSet<string>(ingredients, StringComparer.OrdinalIgnoreCase);
+            return recipes.Where(recipe => {
+                var recipeIngredientSet = new HashSet<string>(recipe.RecipeIngredientParts, StringComparer.OrdinalIgnoreCase);
+                matchCount = recipeIngredientSet.Intersect(ingredientSet).Count();
+                //Console.WriteLine($"match count:{matchCount} intersectCount: {queryKeywords.Count()}");
+                return (matchCount == ingredients.Count());
             }).ToList();
 
         }
@@ -50,6 +75,7 @@ namespace MealPlaner.Services
 
                 Console.WriteLine($"Time elapesd filtering with regex: {stopwatch.Elapsed.TotalSeconds}");
             }
+
             var filteredRecipes = FilterRecipesByIngredientMatch(recipes, queryParams.Ingredients, fast);
             Console.WriteLine("completed filtering by ingredient");
             return filteredRecipes;
@@ -126,7 +152,7 @@ namespace MealPlaner.Services
             }
 
             return patterns;
-        } public List<Recipe> GetIngredientFilteredRecipes(IMongoCollection<Recipe> collection, string[] ingredients, double minMatchPercentage = 55)
+        } public List<Recipe> GetIngredientFilteredRecipesFromDb(IMongoCollection<Recipe> collection, string[] ingredients, double minMatchPercentage = 55)
         {
             var queryableCollection = collection.AsQueryable();
             var query = queryableCollection
@@ -146,7 +172,7 @@ namespace MealPlaner.Services
 
         }
 
-        public List<Recipe> GetKeywordFilteredRecipes(IMongoCollection<Recipe> collection, string[] ingredients)
+        private List<Recipe> GetKeywordFilteredRecipesFromDb(IMongoCollection<Recipe> collection, string[] ingredients)
         {
             try
             {
@@ -177,7 +203,7 @@ namespace MealPlaner.Services
 
 
 
-        public List<Recipe> GetMatchingRecipes(IMongoCollection<Recipe> collection, string[] ingredients, double minMatchPercentage = 55)
+        public List<Recipe> GetMatchingRecipesUsingMongoAgregate(IMongoCollection<Recipe> collection, string[] ingredients, double minMatchPercentage = 55)
         {
             var ingredientBson = ingredients.Select(ingredient => (BsonValue)ingredient).ToList();
             var pipeline = new BsonDocument[]
