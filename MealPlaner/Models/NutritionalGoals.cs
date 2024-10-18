@@ -8,7 +8,7 @@
         public double TargetSaturatedFatContent { get; set; } = 22.0;//g
         public double TargetSugarContent { get; set; } = 25.0;//g
         public double TargetProteinContent { get; set; } = 48.0;//g
-        public double TargetCarbsContent { get; set; } = 135.0; //g
+        public double TargetCarbohydrateContent { get; set; } = 135.0; //g
         public double TargetCholesterolContent { get; set; } = 300.0; //mg
     }
 }

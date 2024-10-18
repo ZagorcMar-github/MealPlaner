@@ -10,7 +10,7 @@
         public double TargetSaturatedFatProcent { get; set; }
         public double TargetSugarProcent { get; set; }
         public double TargetProteinProcent { get; set; }
-        public double TargetCarbsProcent { get; set; }
+        public double TargetCarbohydrateProcent { get; set; }
         public double TargetCholesterolProcent { get; set; }
 
     }

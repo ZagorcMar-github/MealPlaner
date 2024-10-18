@@ -124,9 +124,9 @@ namespace MealPlaner.controllers
         {
             try
             {
-                await _recipeCRUD.GenerateMealPlan(meals);
+                List<Recipe> result= await _recipeCRUD.GenerateMealPlan(meals);
 
-                return Ok("rara");
+                return Ok(result);
             }
             catch (Exception ex)
             {

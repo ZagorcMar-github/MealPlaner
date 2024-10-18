@@ -1,18 +1,14 @@
-﻿using Amazon.Runtime.Endpoints;
-using MealPlaner.CRUD.Interfaces;
+﻿using MealPlaner.CRUD.Interfaces;
 using MealPlaner.Models;
 using MealPlaner.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
-using MongoDB.Bson;
 using MongoDB.Driver;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq.Expressions;
 using System.Reflection;
-using System.Security.Cryptography.Xml;
 
 
 
@@ -47,29 +43,50 @@ namespace MealPlaner.CRUD
             try
             {
                 ParallelIngredientFilter filter = new ParallelIngredientFilter(_recipesCollection);
-                List<Recipe>? recipes = new List<Recipe> { };
-                recipes = GlobalVariables.Recipes;
+                List<Recipe> baseRecipes = GlobalVariables.Recipes;
+                List<Recipe>? optimalRecipes = new List<Recipe> { };
+                List<Recipe>? keywordFilteredRecipes = new List<Recipe> { };
                 if (!meals.Preferences.IsNullOrEmpty())
                 {
-                    recipes = filter.FilterByKeywords(recipes, meals.Preferences);
+                    baseRecipes = filter.FilterByKeywords(baseRecipes, meals.Preferences);
                 }
-                
+
                 CreateRangedProcentageValues(meals.DailyMeals);
 
-                foreach (var (key,value) in meals.DailyMeals)
+                foreach (var (key, value) in meals.DailyMeals)
                 {
-                    var MealNutritionalGoal= getRawNutritionalValue(meals.Goals, value);
-                    GetNormalizedNutritionalValues(MealNutritionalGoal);
+                    var mealRecipes = baseRecipes;
+
+                    if (!value.MustInclude.IsNullOrEmpty()) 
+                    {
+                        mealRecipes = filter.FilterByMustIncludeIngredients(mealRecipes, value.MustInclude.ToArray());
+                    }
+                    if (!value.MustExclude.IsNullOrEmpty()) 
+                    {
+                        mealRecipes = filter.FilterByExcludedIngredients(mealRecipes,value.MustExclude.ToArray());
+                    }
+                    var MealNutritionalGoal = getRawNutritionalValue(meals.Goals, value);
+                    Stopwatch stopwatch = Stopwatch.StartNew();
+                    stopwatch.Start();
+                    await NormalizeNutritionalValues(MealNutritionalGoal);
+                    stopwatch.Stop();
+                    Console.WriteLine($"time elapsed normalizing goals: {stopwatch.Elapsed}");
+                    var foundRecipe = FindOptimalRecipe(mealRecipes, MealNutritionalGoal);
+                    if (foundRecipe != null)
+                    {
+                        meals.Goals.TargetCarbohydrateContent = meals.Goals.TargetCarbohydrateContent - foundRecipe.CarbohydrateContent / foundRecipe.RecipeServings;
+                        meals.Goals.TargetSaturatedFatContent = meals.Goals.TargetSaturatedFatContent - foundRecipe.SaturatedFatContent / foundRecipe.RecipeServings;
+                        meals.Goals.TargetCholesterolContent = meals.Goals.TargetCholesterolContent - foundRecipe.CholesterolContent / foundRecipe.RecipeServings;
+                        meals.Goals.TargetProteinContent = meals.Goals.TargetProteinContent - foundRecipe.ProteinContent / foundRecipe.RecipeServings; 
+                        meals.Goals.TargetFiberContent = meals.Goals.TargetFiberContent - foundRecipe.FiberContent / foundRecipe.RecipeServings;
+                        meals.Goals.TargetSugarContent = meals.Goals.TargetSugarContent - foundRecipe.SugarContent / foundRecipe.RecipeServings;
+                        meals.Goals.TargetFatContent = meals.Goals.TargetFatContent - foundRecipe.FatContent / foundRecipe.RecipeServings;
+                        meals.Goals.TargetCalories = meals.Goals.TargetCalories - foundRecipe.Calories / foundRecipe.RecipeServings;
+                    }
+                    optimalRecipes.Add(foundRecipe);
 
                 }
-
-
-
-                if (meals == null) {
-
-                    return recipes;
-                }
-                return recipes;
+                return optimalRecipes;
             }
             catch (Exception ex)
             {
@@ -77,12 +94,55 @@ namespace MealPlaner.CRUD
             }
 
         }
-        private NutritionalGoals getRawNutritionalValue(NutritionalGoals dailyGoal, DailyMealCharacteristics mealCharacteristics) 
+        private Recipe FindOptimalRecipe(List<Recipe> recipes, NutritionalGoals normalizedNutritionalGoals)
+        {
+            var recs = recipes.Select(recipe =>
+            {
+                var RecipeProperties = typeof(Recipe).GetProperties().Where(p => p.Name.EndsWith("_MinMax"));
+                var normalizedNutritionalGoalsProperties = typeof(NutritionalGoals).GetProperties();
+                Dictionary<string, object> propertyDictionary = new Dictionary<string, object>();
+                double euclidianDistance = 0;
+                double sumOfSquares = 0;
+                foreach (var property in RecipeProperties)
+                {
+                    if (property.CanRead) // Ensure the property can be read
+                    {
+                        propertyDictionary[property.Name] = property.GetValue(recipe);
+                    }
+                }
+                foreach (var property in normalizedNutritionalGoalsProperties)
+                {
+                    var normTargetNutritionalValue = (double)property.GetValue(normalizedNutritionalGoals);
+                    string key = $"{property.Name.Replace("Target", "")}_MinMax";
+                    if (propertyDictionary.TryGetValue(key, out object RecipeNutValue))
+                    {
+                        if (double.TryParse(RecipeNutValue?.ToString(), out double recipeNutValueParsed))
+                        {
+                            sumOfSquares += Math.Pow((recipeNutValueParsed - normTargetNutritionalValue), 2);
+                        };
+                    }
+                }
+                euclidianDistance = Math.Sqrt(sumOfSquares);
+                return new { Recipe = recipe, EuclidianDistance = euclidianDistance };
+            }).OrderBy(x => x.EuclidianDistance).Take(20).ToList();
+            var random = new Random();
+            Recipe optimalRecipe = new Recipe { };
+            if (!recs.IsNullOrEmpty()) 
+            {
+            optimalRecipe = recs[random.Next(recs.Count)].Recipe;
+            }
+            return optimalRecipe;
+
+            // calculate euclidian 
+            // sort by lowest distance 
+            //get random from top 20
+        }
+        private NutritionalGoals getRawNutritionalValue(NutritionalGoals dailyGoal, DailyMealCharacteristics mealCharacteristics)
         {
             NutritionalGoals mealGoal = new NutritionalGoals
             {
                 TargetCalories = dailyGoal.TargetCalories * mealCharacteristics.TargetCalorieProcent,
-                TargetCarbsContent = dailyGoal.TargetCarbsContent * mealCharacteristics.TargetCarbsProcent,
+                TargetCarbohydrateContent = dailyGoal.TargetCarbohydrateContent * mealCharacteristics.TargetCarbohydrateProcent,
                 TargetCholesterolContent = dailyGoal.TargetCholesterolContent * mealCharacteristics.TargetCholesterolProcent,
                 TargetFatContent = dailyGoal.TargetFatContent * mealCharacteristics.TargetFatProcent,
                 TargetFiberContent = dailyGoal.TargetFiberContent * mealCharacteristics.TargetFiberProcent,
@@ -93,33 +153,49 @@ namespace MealPlaner.CRUD
             };
             return mealGoal;
         }
-        private async void GetNormalizedNutritionalValues(NutritionalGoals rawMealNutritionalValues) 
+        private async Task<bool> NormalizeNutritionalValues(NutritionalGoals rawMealNutritionalValues)
         {
-            var properties = typeof(NutritionalGoals).GetProperties();
-            
-            foreach (var item in properties)
+            try
             {
-                var propertyName = item.Name;
-
-                // Remove the 'Target' prefix if it exists
-                if (propertyName.StartsWith("Target"))
+                Stopwatch stopwatch = new Stopwatch { };
+                var properties = typeof(NutritionalGoals).GetProperties();
+                foreach (var item in properties)
                 {
-                    propertyName = propertyName.Substring("Target".Length);
-                }
+                    var propertyName = item.Name;
 
-                // Assuming you want to use this property name to get some values asynchronously
-                var minValue = await GetMinValueAsync(propertyName);
-                var maxValue = await GetMaxValueAsync(propertyName);
-                var orginalValue= (double)item.GetValue(rawMealNutritionalValues);
-                item.SetValue(rawMealNutritionalValues,getNormalizedValue(orginalValue,maxValue,minValue,1.0));
+                    // Remove the 'Target' prefix if it exists
+                    if (propertyName.StartsWith("Target"))
+                    {
+                        propertyName = propertyName.Substring("Target".Length);
+                    }
+
+                    // Assuming you want to use this property name to get some values asynchronously
+                    stopwatch.Start();
+                    var minValue = await GetMinValueAsync(propertyName);
+                    stopwatch.Stop();
+                    Console.WriteLine($"Time Elapsed getting min value {stopwatch.Elapsed}");
+                    Stopwatch stopwatch1 = new Stopwatch();
+                    stopwatch1.Start();
+                    var maxValue = await GetMaxValueAsync(propertyName);
+                    stopwatch1.Stop();
+                    Console.WriteLine($" Time Elapsed getting max value: {stopwatch1.Elapsed}");
+                    var orginalValue = (double)item.GetValue(rawMealNutritionalValues);
+                    item.SetValue(rawMealNutritionalValues, getNormalizedValue(orginalValue, maxValue, minValue, 1.0));
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                return false;
+
             }
         }
 
-        private void CreateRangedProcentageValues(Dictionary<string, DailyMealCharacteristics> mealsCharacteristics) 
+        private void CreateRangedProcentageValues(Dictionary<string, DailyMealCharacteristics> mealsCharacteristics)
         {
             int mealsADay = mealsCharacteristics.Count;
             int index = 0;
-            foreach (var (key,value) in mealsCharacteristics)
+            foreach (var (key, value) in mealsCharacteristics)
             {
                 var meal = value;
                 double scaler = (index == mealsADay - 1) ? 1 : (index == 0) ? 1 : mealsADay - index;
@@ -127,7 +203,7 @@ namespace MealPlaner.CRUD
                 var properties = typeof(DailyMealCharacteristics).GetProperties()
                     .Where(p => p.Name.StartsWith("Target") && p.Name.EndsWith("Procent"));
 
-                if (index == mealsADay - 1) 
+                if (index == mealsADay - 1)
                 {
                     foreach (var prop in properties)
                     {
@@ -135,7 +211,7 @@ namespace MealPlaner.CRUD
                     }
                 }
                 else
-                {     
+                {
                     foreach (var prop in properties)
                     {
                         double currentValue = (double)prop.GetValue(meal);
@@ -196,7 +272,7 @@ namespace MealPlaner.CRUD
                 SugarContent = recipeDto.TotalSugarContent,
                 ProteinContent = recipeDto.TotalProteinContent,
 
-                Calories_MinMax = getNormalizedValue(recipeDto.TotalCalories, CaloriesMaxValue, CaloriesMinValue,recipeDto.RecipeServings),
+                Calories_MinMax = getNormalizedValue(recipeDto.TotalCalories, CaloriesMaxValue, CaloriesMinValue, recipeDto.RecipeServings),
                 FatContent_MinMax = getNormalizedValue(recipeDto.TotalFatContent, FatContentMaxValue, FatContentMinValue, recipeDto.RecipeServings),
                 SaturatedFatContent_MinMax = getNormalizedValue(recipeDto.TotalSaturatedFatContent, SaturatedFatContentMaxValue, SaturatedFatContentMinValue, recipeDto.RecipeServings),
                 CholesterolContent_MinMax = getNormalizedValue(recipeDto.TotalCholesterolContent, CholesterolContentMaxValue, CholesterolContentMinValue, recipeDto.RecipeServings),
@@ -208,17 +284,17 @@ namespace MealPlaner.CRUD
             };
 
 
-             await _recipesCollection.InsertOneAsync(recipe);
+            await _recipesCollection.InsertOneAsync(recipe);
             var cleanRecipe = new RecipeUpdateDto(recipe);
 
             return cleanRecipe;
         }
-        private double getNormalizedValue(double originalValue, double maxValue, double minValue,double recipeServings)
+        private double getNormalizedValue(double originalValue, double maxValue, double minValue, double recipeServings)
         {
             try
             {
                 double normalizedValue = (maxValue != minValue)
-                     ? (originalValue/recipeServings - minValue) / (maxValue - minValue) : 0;
+                     ? (originalValue / recipeServings - minValue) / (maxValue - minValue) : 0;
 
                 return normalizedValue;
             }
@@ -245,7 +321,7 @@ namespace MealPlaner.CRUD
                 _logger.LogError($"exception during deletion : {ex.Message}");
                 throw;
             }
-            
+
         }
 
         public Task<Recipe[]> GetMealPlan()
@@ -257,7 +333,7 @@ namespace MealPlaner.CRUD
         {
             try
             {
-                var result =await  _recipesCollection.Find(x => x.RecipeId == id).FirstOrDefaultAsync(); ;
+                var result = await _recipesCollection.Find(x => x.RecipeId == id).FirstOrDefaultAsync(); ;
                 RecipeUpdateDto cleanResult = new RecipeUpdateDto(result);
                 return cleanResult;
 
@@ -429,7 +505,7 @@ namespace MealPlaner.CRUD
                 var existingRecipeClean = new RecipeUpdateDto(existingRecipe);
                 var updateDefinition = new List<UpdateDefinition<Recipe>>();
 
-                updateDefinition =await  BuildUpdateDefinition(existingRecipe, recipeUpdate);
+                updateDefinition = await BuildUpdateDefinition(existingRecipe, recipeUpdate);
 
                 // If there are no changes, return the existing recipe
                 if (!updateDefinition.Any())
@@ -444,7 +520,7 @@ namespace MealPlaner.CRUD
                 var result = await GetRecipe(recipeUpdate.RecipeId);
                 _logger.LogInformation($"Recipe with ID {recipeUpdate.RecipeId} updated successfully.");
 
-                return result; 
+                return result;
             }
             catch (Exception ex)
             {
@@ -472,17 +548,17 @@ namespace MealPlaner.CRUD
 
             return updateDefinition;
         }
-        private  void UpdateIfChanged<T>(List<UpdateDefinition<Recipe>> updateDefinition, T existingValue, T newValue, Expression<Func<Recipe, T>> field)
+        private void UpdateIfChanged<T>(List<UpdateDefinition<Recipe>> updateDefinition, T existingValue, T newValue, Expression<Func<Recipe, T>> field)
         {
             if (!EqualityComparer<T>.Default.Equals(existingValue, newValue))
             {
-                 updateDefinition.Add(Builders<Recipe>.Update.Set(field, newValue));
+                updateDefinition.Add(Builders<Recipe>.Update.Set(field, newValue));
             }
         }
         private async Task<bool> UpdateNutritionalValue(List<UpdateDefinition<Recipe>> updateDefinition, Recipe existingRecipe, RecipeUpdateDto recipeUpdate)
         {
             var nutritionalFieldsMinMax = new Dictionary<string, (double min, double max)> { };
-            var nutritionalFields = new Dictionary<string, (double existingValue, double newValue,double recipeServings)>
+            var nutritionalFields = new Dictionary<string, (double existingValue, double newValue, double recipeServings)>
             {
                 { "Calories", (existingRecipe.Calories, recipeUpdate.TotalCalories,recipeUpdate.RecipeServings) },
                 { "FatContent", (existingRecipe.FatContent, recipeUpdate.TotalFatContent,recipeUpdate.RecipeServings) },
@@ -494,13 +570,14 @@ namespace MealPlaner.CRUD
                 { "SugarContent", (existingRecipe.SugarContent, recipeUpdate.TotalSugarContent,recipeUpdate.RecipeServings) },
                 { "ProteinContent", (existingRecipe.ProteinContent, recipeUpdate.TotalProteinContent,recipeUpdate.RecipeServings) }
             };
-            foreach (var field in nutritionalFields) 
+            foreach (var field in nutritionalFields)
             {
-                UpdateIfChanged(updateDefinition,field.Value.existingValue, field.Value.newValue, GetExpression<double>(field.Key));
+                UpdateIfChanged(updateDefinition, field.Value.existingValue, field.Value.newValue, GetExpression<double>(field.Key));
                 var maxValue = await GetMaxValueAsync(field.Key);
+
                 var minValue = await GetMinValueAsync(field.Key);
-                UpdateIfChanged(updateDefinition, GetMinMaxValue(existingRecipe, field.Key),getNormalizedValue(field.Value.newValue,maxValue,minValue,field.Value.recipeServings), GetExpression<double>($"{field.Key}_MinMax"));
-                Console.WriteLine("");
+
+                UpdateIfChanged(updateDefinition, GetMinMaxValue(existingRecipe, field.Key), getNormalizedValue(field.Value.newValue, maxValue, minValue, field.Value.recipeServings), GetExpression<double>($"{field.Key}_MinMax"));
             }
             return true;
         }
@@ -516,41 +593,46 @@ namespace MealPlaner.CRUD
         }
         private async Task<double> GetMinValueAsync(string value)
         {
-            var result = await _recipesCollection
-                .Aggregate()
-                .Project(new BsonDocument
+            var result = GlobalVariables.Recipes.Select(recipe =>
+            {
+                double devidedPrroperty = 0.0;
+                var property = recipe.GetType().GetProperty(value);
+                if (property != null)
                 {
-                    { "valuePerServing", new BsonDocument("$divide", new BsonArray { $"${value}", new BsonDocument("$max", new BsonArray { "$RecipeServings", 1 }) }) }
-                })
-                .Group(new BsonDocument
-                {
-                    { "_id", BsonNull.Value },
-                    { "minValue", new BsonDocument("$min", "$valuePerServing") }
-                })
-                .FirstOrDefaultAsync();
-
-                    return result != null ? result["minValue"].ToDouble() : 0.0;
+                    var propValue = (double)property.GetValue(recipe);
+                    devidedPrroperty = propValue / recipe.RecipeServings;
                 }
+                return new { DevidedProperty = devidedPrroperty };
+            })
+            .Min(x => x.DevidedProperty);
+
+
+            return result != null ? result : 0.0;
+        }
         private async Task<double> GetMaxValueAsync(string value)
         {
-            var result = await _recipesCollection
-                .Aggregate()
-                .Project(new BsonDocument
-                {
-                    { "valuePerServing", new BsonDocument("$divide", new BsonArray { $"${value}", new BsonDocument("$min", new BsonArray { "$RecipeServings", 1 }) }) }
-                })
-                .Group(new BsonDocument
-                {
-                    { "_id", BsonNull.Value },
-                    { "maxValue", new BsonDocument("$max", "$valuePerServing") }
-                })
-                .FirstOrDefaultAsync();
 
-            return result != null ? result["maxValue"].ToDouble() : 0.0;
+            var result = GlobalVariables.Recipes.Select(recipe =>
+            {
+                double devidedPrroperty = 0.0;
+                var property = recipe.GetType().GetProperty(value);
+                if (property != null)
+                {
+                    var propValue = (double)property.GetValue(recipe);
+                    devidedPrroperty = propValue / recipe.RecipeServings;
+                }
+                return new { DevidedProperty = devidedPrroperty };
+            })
+            .Max(x => x.DevidedProperty);
+
+
+            return result != null ? result : 0.0;
+
+
         }
 
 
-        
+
 
     }
     /*

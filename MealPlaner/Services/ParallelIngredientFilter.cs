@@ -25,9 +25,21 @@ namespace MealPlaner.Services
             var ingredientSet = new HashSet<string>(queryIngredients, StringComparer.OrdinalIgnoreCase);
             return recipes.Where(recipe => {
                 var recipeIngredientSet = new HashSet<string>(recipe.RecipeIngredientParts, StringComparer.OrdinalIgnoreCase);
-                matchCount = recipeIngredientSet.Intersect(ingredientSet).Count();
+                matchCount = recipeIngredientSet.Intersect(ingredientSet, StringComparer.OrdinalIgnoreCase).Count();
                 Console.WriteLine(matchCount);
                 return (matchCount == 0);
+            }).ToList();
+
+        }
+        public List<Recipe> FilterByMustIncludeIngredients(List<Recipe> recipes, string[] queryIngredients)
+        {
+            int matchCount = 0;
+            var ingredientSet = new HashSet<string>(queryIngredients, StringComparer.OrdinalIgnoreCase);
+            return recipes.Where(recipe => {
+                var recipeIngredientSet = new HashSet<string>(recipe.RecipeIngredientParts, StringComparer.OrdinalIgnoreCase);
+                matchCount = recipeIngredientSet.Intersect(ingredientSet, StringComparer.OrdinalIgnoreCase).Count();
+                //Console.WriteLine(matchCount);
+                return (matchCount == queryIngredients.Count());
             }).ToList();
 
         }
@@ -37,7 +49,7 @@ namespace MealPlaner.Services
             var ingredientSet = new HashSet<string>(queryKeywords, StringComparer.OrdinalIgnoreCase);
             return recipes.Where(recipe => {
                 var recipeIngredientSet = new HashSet<string>(recipe.Keywords, StringComparer.OrdinalIgnoreCase);
-                matchCount = recipeIngredientSet.Intersect(ingredientSet).Count();
+                matchCount = recipeIngredientSet.Intersect(ingredientSet, StringComparer.OrdinalIgnoreCase).Count();
                 //Console.WriteLine($"match count:{matchCount} intersectCount: {queryKeywords.Count()}");
                 return (matchCount == queryKeywords.Count());
             }).ToList();
