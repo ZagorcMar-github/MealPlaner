@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion.Internal;
 using System.Text.Json.Serialization;
 
 namespace MealPlaner.Models
@@ -6,7 +7,7 @@ namespace MealPlaner.Models
 
 
     [JsonSourceGenerationOptions(WriteIndented = true)]
-    [JsonSerializable(typeof(UserCreateDto))]
+    [JsonSerializable(typeof(UserDto))]
     [JsonSerializable(typeof(UserLogInDto))]
     [JsonSerializable(typeof(UserResponseDto))]
     [JsonSerializable(typeof(Recipe))]
@@ -20,6 +21,8 @@ namespace MealPlaner.Models
     [JsonSerializable(typeof(NutritionalGoals))]
     [JsonSerializable(typeof(DailyMealsDto))]
     [JsonSerializable(typeof(List<DailyMealCharacteristics>))]
+    [JsonSerializable(typeof(UserUpdateDto))]
+
     internal partial class AppJsonSerializerContext : JsonSerializerContext
     {
     }

@@ -17,6 +17,7 @@ namespace MealPlaner.controllers
             _userCRUD = userCRUD;
             _logger = logger;
         }
+
         [HttpGet("getUser/{id}")]
         public async Task<IActionResult> GetUser(int id )
         {
@@ -24,17 +25,60 @@ namespace MealPlaner.controllers
             try
             {
                 var result= await _userCRUD.GetUser(id);
+                if (result == null) {
+                    return NotFound("user not found");
+                }
                 return Ok(result);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex.Message);
-                return StatusCode(500,"an error");
+                return StatusCode(500,"somthing went wrong, contact support if the issue is not resolved");
+            }
+
+        }
+        [HttpGet("getUserByUsername/{username}")]
+        public async Task<IActionResult> GetUserByUsername(string username)
+        {
+
+            try
+            {
+                var result = await _userCRUD.GetUserByUsername(username);
+                if (result == null)
+                {
+                    return NotFound("user not found");
+                }
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex.Message);
+                return StatusCode(500, "somthing went wrong, contact support if the issue is not resolved");
+            }
+
+        }
+        [HttpGet("getUserByEmail/{email}")]
+        public async Task<IActionResult> GetUserByEmail(string email)
+        {
+
+            try
+            {
+                var result = await _userCRUD.GetUserByEmail(email);
+                if (result == null)
+                {
+                    return NotFound("user not found");
+                }
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex.Message);
+                return StatusCode(500, "somthing went wrong, contact support if the issue is not resolved");
             }
 
         }
         [HttpPut("updateUser")]
-        public async Task<IActionResult> UpdateUser(User user)
+        public async Task<IActionResult> UpdateUser(UserUpdateDto user)
         {
             try
             {
@@ -43,49 +87,57 @@ namespace MealPlaner.controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError("error");
-                return BadRequest(ex);
+                _logger.LogError(ex.Message);
+                return StatusCode(500, "somthing went wrong, contact support if the issue is not resolved");
             }
         }
         [HttpDelete("DeleteUser")]
-        public async Task<IActionResult> DeleteUser(User user)
+        public async Task<IActionResult> DeleteUser(int id)
         {
             try
             {
-                await _userCRUD.DeleteUser(user);
+                await _userCRUD.DeleteUser(id);
 
                 return Ok();
             }
             catch (Exception ex)
             {
-                _logger.LogError("error");
-                return BadRequest(ex);
+                _logger.LogError(ex.Message);
+                return StatusCode(500, "somthing went wrong, contact support if the issue is not resolved");
             }
         }
         [HttpPost("CreateUser")]
-        public async Task<IActionResult> CreateUser(UserCreateDto userDto)
+        public async Task<IActionResult> CreateUser(UserDto userDto)
         {
-            if (!ModelState.IsValid)
+            try
             {
-                return BadRequest(ModelState);
-            }
+                if (!ModelState.IsValid)
+                {
+                    return BadRequest(ModelState);
+                }
 
-            var (success, message, createdUser) = await _userCRUD.CreateUser(userDto);
+                var (success, message, createdUser) = await _userCRUD.CreateUser(userDto);
 
-            if (success)
-            {
-                _logger.LogInformation("User created successfully: {Username}", createdUser.Username);
-                return CreatedAtAction(nameof(GetUser), new { id = createdUser.UserId }, new UserResponseDto(createdUser));
+                if (success)
+                {
+                    _logger.LogInformation("User created successfully: {Username}", createdUser.Username);
+                    return CreatedAtAction(nameof(GetUser), new { id = createdUser.UserId }, createdUser);
+                }
+                else if (message == "Username already exists.")
+                {
+                    _logger.LogWarning("Attempt to create user with existing username: {Username}", userDto.Username);
+                    return BadRequest(message);
+                }
+                else
+                {
+                    _logger.LogError("Failed to create user: {Message}", message);
+                    return BadRequest(message);
+                }
             }
-            else if (message == "Username already exists.")
-            {
-                _logger.LogWarning("Attempt to create user with existing username: {Username}", userDto.Username);
-                return BadRequest(message);
-            }
-            else
-            {
-                _logger.LogError("Failed to create user: {Message}", message);
-                return BadRequest(message);
+            catch (Exception ex) {
+                _logger.LogError(ex.Message);
+                return StatusCode(500, "somthing went wrong, contact support if the issue is not resolved");
+
             }
         }
         [HttpPost("AuthenticateUser")]
@@ -102,8 +154,8 @@ namespace MealPlaner.controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError("error");
-                return BadRequest("internal server error");
+                _logger.LogError(ex.Message);
+                return StatusCode(500, "somthing went wrong, contact support if the issue is not resolved");
             }
         }
     }

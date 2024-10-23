@@ -13,13 +13,16 @@ namespace MealPlaner.Models
         public string? id { get; set; }
         public int UserId { get; set; }
         public int Age { get; set; }
-        public string City { get; set; }
+        public double HeightCm { get; set; }
+        public double WeightKg { get; set; }
         public string Name { get; set; }
         public string Email { get; set; }
         public string Username { get; set; }
         public string PasswordHash { get; set; }
         public string Subscription { get; set; }
-        
+        public int[]? PreviusRecipeIds { get; set; }
+
+
 
     }
    

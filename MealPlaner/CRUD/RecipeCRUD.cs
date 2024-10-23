@@ -53,19 +53,19 @@ namespace MealPlaner.CRUD
 
                 CreateRangedProcentageValues(meals.DailyMeals);
 
-                foreach (var (key, value) in meals.DailyMeals)
+                foreach (var (key, meal) in meals.DailyMeals)
                 {
                     var mealRecipes = baseRecipes;
 
-                    if (!value.MustInclude.IsNullOrEmpty()) 
+                    if (!meal.MustInclude.IsNullOrEmpty()) 
                     {
-                        mealRecipes = filter.FilterByMustIncludeIngredients(mealRecipes, value.MustInclude.ToArray());
+                        mealRecipes = filter.FilterByMustIncludeIngredients(mealRecipes, meal.MustInclude.ToArray());
                     }
-                    if (!value.MustExclude.IsNullOrEmpty()) 
+                    if (!meal.MustExclude.IsNullOrEmpty()) 
                     {
-                        mealRecipes = filter.FilterByExcludedIngredients(mealRecipes,value.MustExclude.ToArray());
+                        mealRecipes = filter.FilterByExcludedIngredients(mealRecipes, meal.MustExclude.ToArray());
                     }
-                    var MealNutritionalGoal = getRawNutritionalValue(meals.Goals, value);
+                    var MealNutritionalGoal = getRawNutritionalValue(meals.Goals, meal);
                     Stopwatch stopwatch = Stopwatch.StartNew();
                     stopwatch.Start();
                     await NormalizeNutritionalValues(MealNutritionalGoal);
@@ -333,7 +333,7 @@ namespace MealPlaner.CRUD
         {
             try
             {
-                var result = await _recipesCollection.Find(x => x.RecipeId == id).FirstOrDefaultAsync(); ;
+                var result = await _recipesCollection.Find(x => x.RecipeId == id).FirstOrDefaultAsync(); 
                 RecipeUpdateDto cleanResult = new RecipeUpdateDto(result);
                 return cleanResult;
 

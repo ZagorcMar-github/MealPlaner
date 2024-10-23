@@ -1,4 +1,7 @@
-﻿namespace MealPlaner.Models
+﻿using Microsoft.EntityFrameworkCore.Storage.ValueConversion.Internal;
+using System.Text.Json.Serialization;
+
+namespace MealPlaner.Models
 {
     public class DailyMealCharacteristics
     {

@@ -2,7 +2,9 @@
 using MealPlaner.CRUD.Interfaces;
 using MealPlaner.Models;
 using Microsoft.Extensions.Options;
+using MongoDB.Bson;
 using MongoDB.Driver;
+using System.Linq.Expressions;
 namespace MealPlaner.CRUD
 {
     public class UserCRUD : IUserCRUD
@@ -11,7 +13,7 @@ namespace MealPlaner.CRUD
         private readonly ILogger _logger;
         private readonly TokenService _tokenService;
 
-        public UserCRUD(IOptions<RecipesDatabaseSettings> recipesDatabaseSettings, ILogger<UserCRUD> logger,TokenService tokenService)
+        public UserCRUD(IOptions<RecipesDatabaseSettings> recipesDatabaseSettings, ILogger<UserCRUD> logger, TokenService tokenService)
         {
 
             var mongoClient = new MongoClient(
@@ -59,7 +61,7 @@ namespace MealPlaner.CRUD
         }
 
 
-        public async Task<(bool Success, string Message, User CreatedUser)> CreateUser(UserCreateDto user)
+        public async Task<(bool Success, string Message, UserResponseDto CreatedUser)> CreateUser(UserDto user)
         {
             if (user == null)
             {
@@ -68,6 +70,7 @@ namespace MealPlaner.CRUD
 
             try
             {
+                var lastId = await GetLastIdAsync();
                 // Validate user input
                 if (string.IsNullOrWhiteSpace(user.Username) || string.IsNullOrWhiteSpace(user.Password) || string.IsNullOrWhiteSpace(user.Email))
                 {
@@ -85,15 +88,16 @@ namespace MealPlaner.CRUD
                 // Hash the password
                 string passwordHash = BCrypt.Net.BCrypt.HashPassword(user.Password);
 
-                // Create a new user object with only necessary information
+               
                 var newUser = new User
                 {
-                    UserId = user.UserId, // Generate a new GUID for UserId
+                    UserId = lastId+1, //get max value +1
                     Username = user.Username,
-                    City = user.City,
-                    Subscription=user.Subscription,
+                    WeightKg = user.WeightKg,
+                    HeightCm = user.HeightCm,
+                    Subscription = user.Subscription,
                     Name = user.Name,
-                    Age=user.Age,
+                    Age = user.Age,
                     Email = user.Email,
                     PasswordHash = passwordHash
                 };
@@ -103,35 +107,26 @@ namespace MealPlaner.CRUD
 
 
                 // Return success with the created user (excluding password)
-                var createdUser = new User
-                {
-                    UserId = newUser.UserId,
-                    Username = newUser.Username,
-                    Email = newUser.Email
-                };
+                var createdUser = new UserResponseDto(newUser);
 
                 return (true, "User created successfully.", createdUser);
             }
             catch (Exception ex)
             {
-                // Log the exception
                 _logger.LogError(ex, "Error occurred while creating user");
                 return (false, "An error occurred while processing your request.", null);
             }
         }
 
 
-        public async Task<User> DeleteUser(User user)
-        {
-            throw new NotImplementedException();
-        }
-
-        public async Task<User> GetUser(int id)
+        public async Task<UserResponseDto> DeleteUser(int id)
         {
             try
             {
-                var user = await _usersCollection.Find(x => x.UserId == id).FirstOrDefaultAsync();
-                return user;
+                var deletedUser = await GetUser(id);
+                var filter = Builders<User>.Filter.Eq(r => r.UserId, id);
+                await _usersCollection.DeleteOneAsync(filter);
+                return deletedUser;
             }
             catch (Exception)
             {
@@ -140,19 +135,125 @@ namespace MealPlaner.CRUD
             }
         }
 
-        public async Task<User> GetUserByEmail(string email)
+        public async Task<UserResponseDto> GetUser(int id)
         {
-            throw new NotImplementedException();
+            try
+            {
+                var user = await _usersCollection.Find(x => x.UserId == id).FirstOrDefaultAsync();
+                UserResponseDto userResponse = new UserResponseDto(user);
+
+
+
+                return userResponse;
+            }
+            catch (Exception)
+            {
+
+                throw;
+            }
         }
 
-        public async Task<User> GetUserByUsername(string username)
+        public async Task<UserResponseDto> GetUserByEmail(string email)
         {
-            throw new NotImplementedException();
+            try
+            {
+                User user = await _usersCollection.Find(x => x.Email == email).FirstOrDefaultAsync();
+
+                UserResponseDto userResponse = new UserResponseDto(user);
+
+
+                return userResponse;
+            }
+            catch (Exception ex)
+            {
+                throw;
+            }
         }
 
-        public async Task<User> UpdateUser(User user)
+        public async Task<UserResponseDto> GetUserByUsername(string username)
         {
-            throw new NotImplementedException();
+            try
+            {
+                var user = await _usersCollection.Find(x => x.Username == username).FirstOrDefaultAsync();
+                UserResponseDto userResponse = new UserResponseDto(user);
+
+
+                return userResponse;
+            }
+            catch (Exception)
+            {
+
+                throw;
+            }
+        }
+
+        public async Task<UserResponseDto> UpdateUser(UserUpdateDto userUpdate)
+        {
+            try
+            {
+                var filter = Builders<User>.Filter.Eq(dbrecipe => dbrecipe.UserId, userUpdate.UserId);
+                var existingUser= await _usersCollection.Find(filter).FirstOrDefaultAsync();
+                if (existingUser == null)
+                {
+                    _logger.LogError($"Recipe with ID {userUpdate.UserId} not found.");
+                    return null;
+                }
+                var existingUserClean= new UserResponseDto(existingUser);
+                var updateDefinition = new List<UpdateDefinition<User>>();
+
+                updateDefinition = await BuildUpdateDefinition(existingUser, userUpdate);
+
+                // If there are no changes, return the existing User
+                if (!updateDefinition.Any())
+                {
+                    _logger.LogInformation($"No changes detected for User with ID {userUpdate.UserId}.");
+                    return existingUserClean;
+                }
+
+                // Combine all update definitions and execute the update operation
+                var combinedUpdate = Builders<User>.Update.Combine(updateDefinition);
+                await _usersCollection.UpdateOneAsync(filter, combinedUpdate);
+                return await GetUser(userUpdate.UserId);
+            }
+            catch (Exception)
+            {
+
+                throw;
+            }
+        }
+        private void UpdateIfChanged<T>(List<UpdateDefinition<User>> updateDefinition, T existingValue, T newValue, Expression<Func<User, T>> field)
+        {
+            if (!EqualityComparer<T>.Default.Equals(existingValue, newValue))
+            {
+                updateDefinition.Add(Builders<User>.Update.Set(field, newValue));
+            }
+        }
+        private async Task<List<UpdateDefinition<User>>> BuildUpdateDefinition(User existingUser, UserUpdateDto userUpdate)
+        {
+            List<UpdateDefinition<User>> updateDefinition = new List<UpdateDefinition<User>>();
+            UpdateIfChanged(updateDefinition, existingUser.Username, userUpdate.Username, x => x.Username);
+            UpdateIfChanged(updateDefinition, existingUser.Name, userUpdate.Name, x => x.Name);
+            UpdateIfChanged(updateDefinition, existingUser.Age, userUpdate.Age, x => x.Age);
+            UpdateIfChanged(updateDefinition, existingUser.WeightKg, userUpdate.WeightKg, x => x.WeightKg);
+            UpdateIfChanged(updateDefinition, existingUser.HeightCm, userUpdate.HeightCm, x => x.HeightCm);
+            UpdateIfChanged(updateDefinition, existingUser.Email, userUpdate.Email, x => x.Email);
+            UpdateIfChanged(updateDefinition, existingUser.PreviusRecipeIds, userUpdate.PreviusRecipeIds, x => x.PreviusRecipeIds);
+            return updateDefinition;
+
+        }
+        private async Task<int> GetLastIdAsync()
+        {
+
+            var result = await _usersCollection
+                .Find(new BsonDocument())  // An empty filter to find all documents
+                .Sort(Builders<User>.Sort.Descending("UserId")) // Sort by 'id' in descending order
+                .Limit(1) // Only retrieve the first document (the one with the max id)
+                .FirstOrDefaultAsync();
+
+
+            return result != null ? result.UserId : 0;
+
+
         }
     }
 }
