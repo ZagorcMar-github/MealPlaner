@@ -10,6 +10,7 @@ namespace MealPlaner.CRUD.Interfaces
         public Task<UserResponseDto> GetUser(int id);
         public Task<UserResponseDto> GetUserByUsername(string username);
         public Task<UserResponseDto> GetUserByEmail(string email);
+        public Task<UserResponseDto> UpdateUserRecipeIds(int userId,int[] recipeIds);
         public Task<(bool Success, string Message, string jwt)> AuthenticateUser(UserLogInDto user);    
 
     }

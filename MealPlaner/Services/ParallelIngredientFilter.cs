@@ -26,7 +26,6 @@ namespace MealPlaner.Services
             return recipes.Where(recipe => {
                 var recipeIngredientSet = new HashSet<string>(recipe.RecipeIngredientParts, StringComparer.OrdinalIgnoreCase);
                 matchCount = recipeIngredientSet.Intersect(ingredientSet, StringComparer.OrdinalIgnoreCase).Count();
-                Console.WriteLine(matchCount);
                 return (matchCount == 0);
             }).ToList();
 

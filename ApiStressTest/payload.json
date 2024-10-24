@@ -1,0 +1,63 @@
+﻿{
+  "preferences": [
+  ],
+  "goals": {
+    "targetCalories": 1800,
+    "targetFiberContent": 25,
+    "targetFatContent": 60,
+    "targetSaturatedFatContent": 18,
+    "targetSugarContent": 24,
+    "targetProteinContent": 100,
+    "targetCarbohydrateContent": 150,
+    "targetCholesterolContent": 200
+  },
+  "dailyMeals": {
+    "breakfast": {
+      "mustInclude": [
+        "Spinach"
+      ],
+      "mustExclude": [
+      ],
+      "targetCalorieProcent": 0.25,
+      "targetFiberProcent": 0.10,
+      "targetFatProcent": 0.20,
+      "targetSaturatedFatProcent": 0.05,
+      "targetSugarProcent": 0.05,
+      "targetProteinProcent": 0.30,
+      "targetCarbohydrateProcent": 0.20,
+      "targetCholesterolProcent": 0.10
+    },
+    "lunch": {
+      "mustInclude": [
+        "Quinoa"
+      ],
+      "mustExclude": [
+      ],
+      "targetCalorieProcent": 0.35,
+      "targetFiberProcent": 0.40,
+      "targetFatProcent": 0.25,
+      "targetSaturatedFatProcent": 0.10,
+      "targetSugarProcent": 0.10,
+      "targetProteinProcent": 0.40,
+      "targetCarbohydrateProcent": 0.40,
+      "targetCholesterolProcent": 0.15
+    },
+    "dinner": {
+      "mustInclude": [
+        "Broccoli"
+      ],
+      "mustExclude": [
+        "Sugary Desserts",
+        "Processed Foods"
+      ],
+      "targetCalorieProcent": 0.30,
+      "targetFiberProcent": 0.35,
+      "targetFatProcent": 0.35,
+      "targetSaturatedFatProcent": 0.08,
+      "targetSugarProcent": 0.05,
+      "targetProteinProcent": 0.30,
+      "targetCarbohydrateProcent": 0.30,
+      "targetCholesterolProcent": 0.20
+    }
+  }
+}

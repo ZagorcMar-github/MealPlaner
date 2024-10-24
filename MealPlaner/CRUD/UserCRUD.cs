@@ -255,5 +255,21 @@ namespace MealPlaner.CRUD
 
 
         }
+
+        public async Task<UserResponseDto> UpdateUserRecipeIds(int userId,int[] recipeIds)
+        {
+            var filter = Builders<User>.Filter.Eq(dbrecipe => dbrecipe.UserId, userId);
+            User user= _usersCollection.Find(user => user.UserId == userId).FirstOrDefault();
+            List<int> prevRecipeIds = user.PreviusRecipeIds.ToList();
+
+            foreach (var item in recipeIds)
+            {
+                prevRecipeIds.Add(item);
+            }
+            UpdateDefinition<User> updateDefinition = Builders<User>.Update.Set(x => x.PreviusRecipeIds, prevRecipeIds.ToArray());
+            await _usersCollection.UpdateOneAsync(filter, updateDefinition);
+
+            return await GetUser(userId);
+        }
     }
 }

@@ -3,6 +3,7 @@ using MealPlaner.Models;
 using MealPlaner.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Configuration.UserSecrets;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using MongoDB.Driver;
@@ -19,10 +20,11 @@ namespace MealPlaner.CRUD
         private readonly IMongoCollection<Recipe> _recipesCollection;
         private readonly ILogger _logger;
         private readonly IMemoryCache _cache;
-
+        private readonly IUserCRUD _userCRUD;
+        private readonly HeaderRequestDecoder _headerRequestDecoder;
 
         private const string CacheKeyPrefix = "FilteredRecipes_";
-        public RecipeCRUD(IOptions<RecipesDatabaseSettings> recipesDatabaseSettings, ILogger<RecipeCRUD> logger, IMemoryCache cache)
+        public RecipeCRUD(IOptions<RecipesDatabaseSettings> recipesDatabaseSettings, ILogger<RecipeCRUD> logger, IMemoryCache cache,IUserCRUD userCRUD,HeaderRequestDecoder headerRequestDecoder)
         {
             var mongoClient = new MongoClient(
             recipesDatabaseSettings.Value.ConnectionString);
@@ -34,38 +36,56 @@ namespace MealPlaner.CRUD
                 recipesDatabaseSettings.Value.RecipesCollectionName);
             _logger = logger;
             _cache = cache;
-
-
+            _userCRUD=userCRUD;
+            _headerRequestDecoder= headerRequestDecoder;    
         }
 
-        public async Task<List<Recipe>> GenerateMealPlan(DailyMealsDto meals)
+        public async Task<List<Recipe>> GenerateMealPlan(HttpContext httpContext,DailyMealsDto meals)
         {
-            try
-            {
+            try {
+                int userId = 0;
+                Int32.TryParse(_headerRequestDecoder.ExtractUserIdFromJwt(httpContext), out userId);
+                if (userId <= 0) 
+                {
+                    return new List<Recipe>();
+                }
+
                 ParallelIngredientFilter filter = new ParallelIngredientFilter(_recipesCollection);
+
+                UserResponseDto user= await _userCRUD.GetUser(userId);
+                int[] prev5UsedRecipes = user.PreviusRecipeIds.TakeLast(5).ToArray();
+                
                 List<Recipe> baseRecipes = GlobalVariables.Recipes;
                 List<Recipe>? optimalRecipes = new List<Recipe> { };
                 List<Recipe>? keywordFilteredRecipes = new List<Recipe> { };
+                baseRecipes = baseRecipes.Where(x => !prev5UsedRecipes.Contains(x.RecipeId)).ToList();
                 if (!meals.Preferences.IsNullOrEmpty())
                 {
                     baseRecipes = filter.FilterByKeywords(baseRecipes, meals.Preferences);
                 }
 
-                CreateRangedProcentageValues(meals.DailyMeals);
+                CreateRangedProcentageValues(meals.DailyMeals); // creates a procentage value for each meal that coresponds to the amount of meals a day.
+                                                                // the next iteration would take in to account the remaing calories neaded
+                                                                // so if i user puts breakfast (calories) 0.3 lunch 0.3 and  dinner: 0.3
+                                                                //the ranged characteristics would be breakfast (calories) 0.3 lunch 0.67 and dinner: 1
+                                                                //if we add another meal split in to 4 equal porcentile pieces
+                                                                //                                    breakfast (calories) 0.25 lunch: 0.50 dinner:0.75 and snack:1  
+                                                                //we ensure a slight bit of variation to the generated recipes  
+               
 
-                foreach (var (key, meal) in meals.DailyMeals)
+                foreach (var (key, mealCharacteristics) in meals.DailyMeals)
                 {
                     var mealRecipes = baseRecipes;
 
-                    if (!meal.MustInclude.IsNullOrEmpty()) 
+                    if (!mealCharacteristics.MustInclude.IsNullOrEmpty()) 
                     {
-                        mealRecipes = filter.FilterByMustIncludeIngredients(mealRecipes, meal.MustInclude.ToArray());
+                        mealRecipes = filter.FilterByMustIncludeIngredients(mealRecipes, mealCharacteristics.MustInclude.ToArray());
                     }
-                    if (!meal.MustExclude.IsNullOrEmpty()) 
+                    if (!mealCharacteristics.MustExclude.IsNullOrEmpty()) 
                     {
-                        mealRecipes = filter.FilterByExcludedIngredients(mealRecipes, meal.MustExclude.ToArray());
+                        mealRecipes = filter.FilterByExcludedIngredients(mealRecipes, mealCharacteristics.MustExclude.ToArray());
                     }
-                    var MealNutritionalGoal = getRawNutritionalValue(meals.Goals, meal);
+                    var MealNutritionalGoal = getRawNutritionalValue(meals.Goals, mealCharacteristics); // get the amount of nutrition a meal should consist of
                     Stopwatch stopwatch = Stopwatch.StartNew();
                     stopwatch.Start();
                     await NormalizeNutritionalValues(MealNutritionalGoal);
@@ -224,7 +244,7 @@ namespace MealPlaner.CRUD
 
         }
 
-        public async Task<RecipeUpdateDto> CreateRecipe(RecipeDto recipeDto)
+        public async Task<List<RecipeUpdateDto>> CreateRecipe(List<RecipeDto> recipesDto)
         {
             var CaloriesMaxValue = await GetMaxValueAsync("Calories");
             var CaloriesMinValue = await GetMinValueAsync("Calories");
@@ -245,49 +265,55 @@ namespace MealPlaner.CRUD
             var ProteinContentMaxValue = await GetMaxValueAsync("ProteinContent");
             var ProteinContentMinValue = await GetMinValueAsync("ProteinContent");
             var lastId = System.Convert.ToInt32(System.Math.Floor(await GetMaxValueAsync("RecipeId")));
-
-            Recipe recipe = new Recipe
+            List<Recipe> recipesToInsert = new List<Recipe>();
+            List<RecipeUpdateDto> recipesResponse = new List<RecipeUpdateDto>();
+            foreach(var recipeDto in recipesDto)
             {
-                RecipeId = (lastId + 1),
-                Name = recipeDto.Name,
-                Keywords = recipeDto.Keywords,
-                RecipeCategory = recipeDto.RecipeCategory,
-                ingredients_raw = recipeDto.ingredients_raw,
-                RecipeIngredientParts = recipeDto.RecipeIngredientParts,
-                RecipeInstructions = recipeDto.RecipeInstructions,
-                RecipeServings = recipeDto.RecipeServings,
-                CookTime = recipeDto.CookTime ?? "",
-                RecipeYield = recipeDto.RecipeYield ?? "",
-                PrepTime = recipeDto.PrepTime ?? "",
-                TotalTime = recipeDto.TotalTime ?? "",
+                Recipe recipe = new Recipe
+                {
+                    RecipeId = (lastId + 1),
+                    Name = recipeDto.Name,
+                    Keywords = recipeDto.Keywords,
+                    RecipeCategory = recipeDto.RecipeCategory,
+                    ingredients_raw = recipeDto.ingredients_raw,
+                    RecipeIngredientParts = recipeDto.RecipeIngredientParts,
+                    RecipeInstructions = recipeDto.RecipeInstructions,
+                    RecipeServings = recipeDto.RecipeServings,
+                    CookTime = recipeDto.CookTime ?? "",
+                    RecipeYield = recipeDto.RecipeYield ?? "",
+                    PrepTime = recipeDto.PrepTime ?? "",
+                    TotalTime = recipeDto.TotalTime ?? "",
 
 
-                Calories = recipeDto.TotalCalories,
-                FatContent = recipeDto.TotalFatContent,
-                SaturatedFatContent = recipeDto.TotalSaturatedFatContent,
-                CholesterolContent = recipeDto.TotalCholesterolContent,
-                SodiumContent = recipeDto.TotalSodiumContent,
-                CarbohydrateContent = recipeDto.TotalCarbohydrateContent,
-                FiberContent = recipeDto.TotalFiberContent,
-                SugarContent = recipeDto.TotalSugarContent,
-                ProteinContent = recipeDto.TotalProteinContent,
+                    Calories = recipeDto.TotalCalories,
+                    FatContent = recipeDto.TotalFatContent,
+                    SaturatedFatContent = recipeDto.TotalSaturatedFatContent,
+                    CholesterolContent = recipeDto.TotalCholesterolContent,
+                    SodiumContent = recipeDto.TotalSodiumContent,
+                    CarbohydrateContent = recipeDto.TotalCarbohydrateContent,
+                    FiberContent = recipeDto.TotalFiberContent,
+                    SugarContent = recipeDto.TotalSugarContent,
+                    ProteinContent = recipeDto.TotalProteinContent,
 
-                Calories_MinMax = getNormalizedValue(recipeDto.TotalCalories, CaloriesMaxValue, CaloriesMinValue, recipeDto.RecipeServings),
-                FatContent_MinMax = getNormalizedValue(recipeDto.TotalFatContent, FatContentMaxValue, FatContentMinValue, recipeDto.RecipeServings),
-                SaturatedFatContent_MinMax = getNormalizedValue(recipeDto.TotalSaturatedFatContent, SaturatedFatContentMaxValue, SaturatedFatContentMinValue, recipeDto.RecipeServings),
-                CholesterolContent_MinMax = getNormalizedValue(recipeDto.TotalCholesterolContent, CholesterolContentMaxValue, CholesterolContentMinValue, recipeDto.RecipeServings),
-                SodiumContent_MinMax = getNormalizedValue(recipeDto.TotalSodiumContent, SodiumContentMaxValue, SodiumContentMinValue, recipeDto.RecipeServings),
-                CarbohydrateContent_MinMax = getNormalizedValue(recipeDto.TotalCarbohydrateContent, CarbohydrateContentMaxValue, CarbohydrateContentMinValue, recipeDto.RecipeServings),
-                FiberContent_MinMax = getNormalizedValue(recipeDto.TotalFiberContent, FiberContentMaxValue, FiberContentMinValue, recipeDto.RecipeServings),
-                SugarContent_MinMax = getNormalizedValue(recipeDto.TotalSugarContent, SugarContentMaxValue, SugarContentMinValue, recipeDto.RecipeServings),
-                ProteinContent_MinMax = getNormalizedValue(recipeDto.TotalProteinContent, ProteinContentMaxValue, ProteinContentMinValue, recipeDto.RecipeServings),
-            };
+                    Calories_MinMax = getNormalizedValue(recipeDto.TotalCalories, CaloriesMaxValue, CaloriesMinValue, recipeDto.RecipeServings),
+                    FatContent_MinMax = getNormalizedValue(recipeDto.TotalFatContent, FatContentMaxValue, FatContentMinValue, recipeDto.RecipeServings),
+                    SaturatedFatContent_MinMax = getNormalizedValue(recipeDto.TotalSaturatedFatContent, SaturatedFatContentMaxValue, SaturatedFatContentMinValue, recipeDto.RecipeServings),
+                    CholesterolContent_MinMax = getNormalizedValue(recipeDto.TotalCholesterolContent, CholesterolContentMaxValue, CholesterolContentMinValue, recipeDto.RecipeServings),
+                    SodiumContent_MinMax = getNormalizedValue(recipeDto.TotalSodiumContent, SodiumContentMaxValue, SodiumContentMinValue, recipeDto.RecipeServings),
+                    CarbohydrateContent_MinMax = getNormalizedValue(recipeDto.TotalCarbohydrateContent, CarbohydrateContentMaxValue, CarbohydrateContentMinValue, recipeDto.RecipeServings),
+                    FiberContent_MinMax = getNormalizedValue(recipeDto.TotalFiberContent, FiberContentMaxValue, FiberContentMinValue, recipeDto.RecipeServings),
+                    SugarContent_MinMax = getNormalizedValue(recipeDto.TotalSugarContent, SugarContentMaxValue, SugarContentMinValue, recipeDto.RecipeServings),
+                    ProteinContent_MinMax = getNormalizedValue(recipeDto.TotalProteinContent, ProteinContentMaxValue, ProteinContentMinValue, recipeDto.RecipeServings),
+                };
+                recipesToInsert.Add(recipe);
+                var cleanRecipe = new RecipeUpdateDto(recipe);
+                recipesResponse.Add(cleanRecipe);
 
+            }
 
-            await _recipesCollection.InsertOneAsync(recipe);
-            var cleanRecipe = new RecipeUpdateDto(recipe);
+            await _recipesCollection.InsertManyAsync(recipesToInsert);
 
-            return cleanRecipe;
+            return recipesResponse;
         }
         private double getNormalizedValue(double originalValue, double maxValue, double minValue, double recipeServings)
         {
@@ -631,113 +657,42 @@ namespace MealPlaner.CRUD
 
         }
 
+        public List<string> GetUniquePreferences()
+        {
+            try
+            {
+                
+                var result= GlobalVariables.Recipes.SelectMany(recipe => recipe.Keywords) 
+                .Distinct() 
+                .ToList();
+                return result;
 
+            }
+            catch (Exception)
+            {
 
+                throw;
+            }
+        }
+        public List<string> GetUniqueIngredients()
+        {
+            try
+            {
 
+                var result = GlobalVariables.Recipes.SelectMany(recipe => recipe.RecipeIngredientParts)
+                .Distinct()
+                .ToList();
+                return result;
+
+            }
+            catch (Exception)
+            {
+
+                throw;
+            }
+        }
     }
-    /*
-     if all else fails 
 
-                if (existingRecipe.Name != recipeUpdate.Name)
-                updateDefinition.Add(Builders<Recipe>.Update.Set(r => r.Name, recipeUpdate.Name));
-
-            if (!existingRecipe.Keywords.SequenceEqual(recipeUpdate.Keywords))
-                updateDefinition.Add(Builders<Recipe>.Update.Set(r => r.Keywords, recipeUpdate.Keywords));
-
-            if (existingRecipe.RecipeCategory != recipeUpdate.RecipeCategory)
-                updateDefinition.Add(Builders<Recipe>.Update.Set(r => r.RecipeCategory, recipeUpdate.RecipeCategory));
-
-            if (!existingRecipe.ingredients_raw.SequenceEqual(recipeUpdate.ingredients_raw))
-                updateDefinition.Add(Builders<Recipe>.Update.Set(r => r.ingredients_raw, recipeUpdate.ingredients_raw));
-
-            if (!existingRecipe.RecipeIngredientParts.SequenceEqual(recipeUpdate.RecipeIngredientParts))
-                updateDefinition.Add(Builders<Recipe>.Update.Set(r => r.RecipeIngredientParts, recipeUpdate.RecipeIngredientParts));
-
-            if (!existingRecipe.RecipeInstructions.SequenceEqual(recipeUpdate.RecipeInstructions))
-                updateDefinition.Add(Builders<Recipe>.Update.Set(r => r.RecipeInstructions, recipeUpdate.RecipeInstructions));
-
-            if (existingRecipe.RecipeServings != recipeUpdate.RecipeServings)
-                updateDefinition.Add(Builders<Recipe>.Update.Set(r => r.RecipeServings, recipeUpdate.RecipeServings));
-
-            if (existingRecipe.CookTime != recipeUpdate.CookTime)
-                updateDefinition.Add(Builders<Recipe>.Update.Set(r => r.CookTime, recipeUpdate.CookTime ?? ""));
-
-            if (existingRecipe.RecipeYield != recipeUpdate.RecipeYield)
-                updateDefinition.Add(Builders<Recipe>.Update.Set(r => r.RecipeYield, recipeUpdate.RecipeYield ?? ""));
-
-            if (existingRecipe.PrepTime != recipeUpdate.PrepTime)
-                updateDefinition.Add(Builders<Recipe>.Update.Set(r => r.PrepTime, recipeUpdate.PrepTime ?? ""));
-
-            if (existingRecipe.TotalTime != recipeUpdate.TotalTime)
-                updateDefinition.Add(Builders<Recipe>.Update.Set(r => r.TotalTime, recipeUpdate.TotalTime ?? ""));
-
-            // Nutritional values comparison
-            if (existingRecipe.Calories != recipeUpdate.TotalCalories)
-                updateDefinition.Add(Builders<Recipe>.Update.Set(r => r.Calories, recipeUpdate.TotalCalories));
-
-            if (existingRecipe.FatContent != recipeUpdate.TotalFatContent)
-                updateDefinition.Add(Builders<Recipe>.Update.Set(r => r.FatContent, recipeUpdate.TotalFatContent));
-
-            if (existingRecipe.SaturatedFatContent != recipeUpdate.TotalSaturatedFatContent)
-                updateDefinition.Add(Builders<Recipe>.Update.Set(r => r.SaturatedFatContent, recipeUpdate.TotalSaturatedFatContent));
-
-            if (existingRecipe.CholesterolContent != recipeUpdate.TotalCholesterolContent)
-                updateDefinition.Add(Builders<Recipe>.Update.Set(r => r.CholesterolContent, recipeUpdate.TotalCholesterolContent));
-
-            if (existingRecipe.SodiumContent != recipeUpdate.TotalSodiumContent)
-                updateDefinition.Add(Builders<Recipe>.Update.Set(r => r.SodiumContent, recipeUpdate.TotalSodiumContent));
-
-            if (existingRecipe.CarbohydrateContent != recipeUpdate.TotalCarbohydrateContent)
-                updateDefinition.Add(Builders<Recipe>.Update.Set(r => r.CarbohydrateContent, recipeUpdate.TotalCarbohydrateContent));
-
-            if (existingRecipe.FiberContent != recipeUpdate.TotalFiberContent)
-                updateDefinition.Add(Builders<Recipe>.Update.Set(r => r.FiberContent, recipeUpdate.TotalFiberContent));
-
-            if (existingRecipe.SugarContent != recipeUpdate.TotalSugarContent)
-                updateDefinition.Add(Builders<Recipe>.Update.Set(r => r.SugarContent, recipeUpdate.TotalSugarContent));
-
-            if (existingRecipe.ProteinContent != recipeUpdate.TotalProteinContent)
-                updateDefinition.Add(Builders<Recipe>.Update.Set(r => r.ProteinContent, recipeUpdate.TotalProteinContent));
-
-            // Min-Max normalized values
-            var caloriesMinMax = getNormalizedValue(recipeUpdate.TotalCalories, CaloriesMaxValue, CaloriesMinValue);
-            if (existingRecipe.Calories_MinMax != caloriesMinMax)
-                updateDefinition.Add(Builders<Recipe>.Update.Set(r => r.Calories_MinMax, caloriesMinMax));
-
-            var fatContentMinMax = getNormalizedValue(recipeUpdate.TotalFatContent, FatContentMaxValue, FatContentMinValue);
-            if (existingRecipe.FatContent_MinMax != fatContentMinMax)
-                updateDefinition.Add(Builders<Recipe>.Update.Set(r => r.FatContent_MinMax, fatContentMinMax));
-
-            var saturatedFatContentMinMax = getNormalizedValue(recipeUpdate.TotalSaturatedFatContent, SaturatedFatContentMaxValue, SaturatedFatContentMinValue);
-            if (existingRecipe.SaturatedFatContent_MinMax != saturatedFatContentMinMax)
-                updateDefinition.Add(Builders<Recipe>.Update.Set(r => r.SaturatedFatContent_MinMax, saturatedFatContentMinMax));
-
-            var cholesterolContentMinMax = getNormalizedValue(recipeUpdate.TotalCholesterolContent, CholesterolContentMaxValue, CholesterolContentMinValue);
-            if (existingRecipe.CholesterolContent_MinMax != cholesterolContentMinMax)
-                updateDefinition.Add(Builders<Recipe>.Update.Set(r => r.CholesterolContent_MinMax, cholesterolContentMinMax));
-
-            var sodiumContentMinMax = getNormalizedValue(recipeUpdate.TotalSodiumContent, SodiumContentMaxValue, SodiumContentMinValue);
-            if (existingRecipe.SodiumContent_MinMax != sodiumContentMinMax)
-                updateDefinition.Add(Builders<Recipe>.Update.Set(r => r.SodiumContent_MinMax, sodiumContentMinMax));
-
-            var carbohydrateContentMinMax = getNormalizedValue(recipeUpdate.TotalCarbohydrateContent, CarbohydrateContentMaxValue, CarbohydrateContentMinValue);
-            if (existingRecipe.CarbohydrateContent_MinMax != carbohydrateContentMinMax)
-                updateDefinition.Add(Builders<Recipe>.Update.Set(r => r.CarbohydrateContent_MinMax, carbohydrateContentMinMax));
-
-            var fiberContentMinMax = getNormalizedValue(recipeUpdate.TotalFiberContent, FiberContentMaxValue, FiberContentMinValue);
-            if (existingRecipe.FiberContent_MinMax != fiberContentMinMax)
-                updateDefinition.Add(Builders<Recipe>.Update.Set(r => r.FiberContent_MinMax, fiberContentMinMax));
-
-            var sugarContentMinMax = getNormalizedValue(recipeUpdate.TotalSugarContent, SugarContentMaxValue, SugarContentMinValue);
-            if (existingRecipe.SugarContent_MinMax != sugarContentMinMax)
-                updateDefinition.Add(Builders<Recipe>.Update.Set(r => r.SugarContent_MinMax, sugarContentMinMax));
-
-            var proteinContentMinMax = getNormalizedValue(recipeUpdate.TotalProteinContent, ProteinContentMaxValue, ProteinContentMinValue);
-            if (existingRecipe.ProteinContent_MinMax != proteinContentMinMax)
-                updateDefinition.Add(Builders<Recipe>.Update.Set(r => r.ProteinContent_MinMax, proteinContentMinMax));
-            
-     
-     */
 
 }
 

@@ -77,13 +77,27 @@ namespace MealPlaner.controllers
             }
 
         }
-        [HttpPut("updateUser")]
+        [HttpPut("UpdateUser")]
         public async Task<IActionResult> UpdateUser(UserUpdateDto user)
         {
             try
             {
                 await _userCRUD.UpdateUser(user);
                 return Ok();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex.Message);
+                return StatusCode(500, "somthing went wrong, contact support if the issue is not resolved");
+            }
+        }
+        [HttpPut("UpdateUserRecipeIds")]
+        public async Task<IActionResult> UpdateUserRecipeIds(int userId, int[] recipeIds)
+        {
+            try
+            {
+               var response= await _userCRUD.UpdateUserRecipeIds(userId,recipeIds);
+                return Ok(response);
             }
             catch (Exception ex)
             {

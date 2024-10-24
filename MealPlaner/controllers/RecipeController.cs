@@ -97,11 +97,11 @@ namespace MealPlaner.controllers
             finally { }
         }
         [HttpPost("CreateRecipe")]
-        public async Task<IActionResult> CreateRecipe([FromBody] RecipeDto recipe)
+        public async Task<IActionResult> CreateRecipe([FromBody] List<RecipeDto> recipes)
         {
             try
             {
-                var result = await _recipeCRUD.CreateRecipe(recipe);
+                var result = await _recipeCRUD.CreateRecipe(recipes);
                 var response = Ok(result);
 
 
@@ -117,14 +117,15 @@ namespace MealPlaner.controllers
                 return BadRequest(ex);
             }
         }
-        //[Authorize]
+        [Authorize]
         [EnableRateLimiting("bucketPerUser")]
         [HttpPost("GenerateMealPlan")]
         public async Task<IActionResult> GenerateMealPlan([FromBody] DailyMealsDto meals)
         {
             try
             {
-                List<Recipe> result= await _recipeCRUD.GenerateMealPlan(meals);
+                var userHttpContext= HttpContext.Response.HttpContext;
+                List<Recipe> result= await _recipeCRUD.GenerateMealPlan(userHttpContext,meals);
 
                 return Ok(result);
             }
@@ -178,12 +179,42 @@ namespace MealPlaner.controllers
             }
 
         }
-        private void DataRefresh() 
+        [HttpGet("GetUniquePreferenceTypes")]
+        public async Task<IActionResult> GetUniquePreferenceTypes() 
         {
-            _backgroundTaskQueue.QueueBackgroundWorkItem(async token =>
+            try
             {
-                await _inMemoryDataRefresh.ReloadData();
-            });
+                Stopwatch st = new Stopwatch();
+                st.Start();
+                var prefrences= _recipeCRUD.GetUniquePreferences();
+                st.Stop();
+                Console.WriteLine($"time spent getting keywords {st.Elapsed}");
+                return Ok(prefrences);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex.Message);
+                throw;
+            }
         }
+        [HttpGet("GetUniqueIngredients")]
+        public async Task<IActionResult> GetUniqueIngredients()
+        {
+            try
+            {
+                Stopwatch st = new Stopwatch();
+                st.Start();
+                var ingredients = _recipeCRUD.GetUniqueIngredients();
+                st.Stop();
+                Console.WriteLine($"time spent getting ingredients {st.Elapsed}");
+                return Ok(ingredients);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex.Message);
+                throw;
+            }
+        }
+        
     }
 }

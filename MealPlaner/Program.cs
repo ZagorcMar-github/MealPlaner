@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using System.Threading.RateLimiting;
+
 var builder = WebApplication.CreateSlimBuilder(args);
 
 
@@ -24,7 +25,7 @@ builder.Services.AddRateLimiter(rateLimiterOptions =>
     rateLimiterOptions.AddPolicy("bucketPerUser", httpContext =>
     {
         // Extract the user id (sub) or subtier from the JWT
-        var subtier = HeaderRequestDecoder.ExtractUserIdFromJwt(httpContext);
+        var subtier = HeaderRequestDecoder.ExtractSubtierFromJwt(httpContext);
 
         // If subtier is found, use it as the partition key, otherwise fallback to IP address
         var partitionKey = subtier ?? httpContext.Connection.RemoteIpAddress?.ToString();
