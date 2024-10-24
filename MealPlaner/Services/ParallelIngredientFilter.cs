@@ -28,7 +28,7 @@ namespace MealPlaner.Services
                 matchCount = recipeIngredientSet.Intersect(ingredientSet, StringComparer.OrdinalIgnoreCase).Count();
                 return (matchCount == 0);
             }).ToList();
-
+            
         }
         public List<Recipe> FilterByMustIncludeIngredients(List<Recipe> recipes, string[] queryIngredients)
         {
@@ -87,11 +87,11 @@ namespace MealPlaner.Services
                 Console.WriteLine($"Time elapesd filtering with regex: {stopwatch.Elapsed.TotalSeconds}");
             }
 
-            var filteredRecipes = FilterRecipesByIngredientMatch(recipes, queryParams.Ingredients, fast);
+            var filteredRecipes = FilterRecipesByIngredientMatch(recipes, queryParams.Ingredients, fast, queryParams.DesiredIngredientPercentage);
             Console.WriteLine("completed filtering by ingredient");
             return filteredRecipes;
         }
-        private List<Recipe> FilterRecipesByIngredientMatch(List<Recipe> recipes, string[] queryIngredients, bool fast)
+        private List<Recipe> FilterRecipesByIngredientMatch(List<Recipe> recipes, string[] queryIngredients,  bool fast, int desiredMatchPercentage = 55)
         {
 
             int matchCount = 0;
@@ -114,7 +114,7 @@ namespace MealPlaner.Services
                     //recipeIngredient.IndexOf(ingredient, StringComparison.OrdinalIgnoreCase) >= 0));
                 }
                 double matchPercentage = (double)matchCount / recipe.ingredients_raw.Count * 100;
-                return matchPercentage >= 55;
+                return matchPercentage >= desiredMatchPercentage;
             }).ToList();
         }
 

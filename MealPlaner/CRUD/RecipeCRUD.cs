@@ -65,13 +65,13 @@ namespace MealPlaner.CRUD
                 }
 
                 CreateRangedProcentageValues(meals.DailyMeals); // creates a procentage value for each meal that coresponds to the amount of meals a day.
-                                                                // the next iteration would take in to account the remaing calories neaded
+                                                                // the next iteration would take in to account the remaing nutritional amount neaded
                                                                 // so if i user puts breakfast (calories) 0.3 lunch 0.3 and  dinner: 0.3
-                                                                //the ranged characteristics would be breakfast (calories) 0.3 lunch 0.67 and dinner: 1
-                                                                //if we add another meal split in to 4 equal porcentile pieces
-                                                                //                                    breakfast (calories) 0.25 lunch: 0.50 dinner:0.75 and snack:1  
-                                                                //we ensure a slight bit of variation to the generated recipes  
-               
+                                                                // the ranged characteristics would return breakfast (calories) 0.3 lunch 0.67 and dinner: 1
+                                                                // if we add another meal split in to 4 equal percentile pieces like:
+                                                                //                   breakfast (calories) 0.25 lunch: 0.50 dinner:0.75 and snack:1  
+                                                                // thus we ensure a slight bit of variation to the generated recipes in each iteration 
+
 
                 foreach (var (key, mealCharacteristics) in meals.DailyMeals)
                 {
@@ -86,12 +86,12 @@ namespace MealPlaner.CRUD
                         mealRecipes = filter.FilterByExcludedIngredients(mealRecipes, mealCharacteristics.MustExclude.ToArray());
                     }
                     var MealNutritionalGoal = getRawNutritionalValue(meals.Goals, mealCharacteristics); // get the amount of nutrition a meal should consist of
+                    await NormalizeNutritionalValues(MealNutritionalGoal);
                     Stopwatch stopwatch = Stopwatch.StartNew();
                     stopwatch.Start();
-                    await NormalizeNutritionalValues(MealNutritionalGoal);
+                    var foundRecipe = FindOptimalRecipe(mealRecipes, MealNutritionalGoal);
                     stopwatch.Stop();
                     Console.WriteLine($"time elapsed normalizing goals: {stopwatch.Elapsed}");
-                    var foundRecipe = FindOptimalRecipe(mealRecipes, MealNutritionalGoal);
                     if (foundRecipe != null)
                     {
                         meals.Goals.TargetCarbohydrateContent = meals.Goals.TargetCarbohydrateContent - foundRecipe.CarbohydrateContent / foundRecipe.RecipeServings;
