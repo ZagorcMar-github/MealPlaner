@@ -10,8 +10,7 @@ data was prcoured from  the folowwing sources:
 
 https://www.kaggle.com/datasets/irkaal/foodcom-recipes-and-reviews
 
-https://www.kaggle.com/datasets/realalexanderwei/food-com-recipes-with-ingredients-and-tags
-
+https://www.kaggle.com/datasets/realalexanderwei/food-com-recipes-with-ingredients-and-tags\n
 Features
 
     Custom Meal Plans: Generate meal plans based on calories, macronutrient ratios (protein, carbs, fat)
@@ -20,12 +19,13 @@ Features
     Allergen Filtering: Allows users to exclude specific ingredients based on allergies or intolerances.
     Recipe Database: Includes a variety of recipes categorized by meal type (breakfast, lunch, dinner, snacks) that can be easily integrated into meal plans.
     Flexibility & Scaling: Plans can be created for a single day or scaled for longer periods (e.g., weekly or monthly plans).
+    
+    
     User Profiles: Store user preferences and past meal plans for personalized recommendations.
-    API Endpoints:
-        Create new meal plans
-        Retrieve specific meals or recipes
-        Modify or customize generated plans
-        Manage user preferences and dietary needs
+    
+    Users may create new recipes
+    Update recipes
+    
 
 Use Cases
 
