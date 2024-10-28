@@ -22,6 +22,7 @@ namespace MealPlaner.Models
     [JsonSerializable(typeof(DailyMealsDto))]
     [JsonSerializable(typeof(List<DailyMealCharacteristics>))]
     [JsonSerializable(typeof(UserUpdateDto))]
+    [JsonSerializable(typeof(QueryParams))]
 
     internal partial class AppJsonSerializerContext : JsonSerializerContext
     {

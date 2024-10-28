@@ -42,16 +42,19 @@ namespace MealPlaner.Services
             }).ToList();
 
         }
-        public List<Recipe> FilterByKeywords(List<Recipe> recipes, string[] queryKeywords)
+        public async Task<List<Recipe>> FilterByKeywords(List<Recipe> recipes, string[] queryKeywords)
         {
-            int matchCount = 0;
-            var ingredientSet = new HashSet<string>(queryKeywords, StringComparer.OrdinalIgnoreCase);
-            return recipes.Where(recipe => {
-                var recipeIngredientSet = new HashSet<string>(recipe.Keywords, StringComparer.OrdinalIgnoreCase);
-                matchCount = recipeIngredientSet.Intersect(ingredientSet, StringComparer.OrdinalIgnoreCase).Count();
-                //Console.WriteLine($"match count:{matchCount} intersectCount: {queryKeywords.Count()}");
-                return (matchCount == queryKeywords.Count());
-            }).ToList();
+            return await Task.Run(() =>
+            {
+                int matchCount = 0;
+                var ingredientSet = new HashSet<string>(queryKeywords, StringComparer.OrdinalIgnoreCase);
+                return recipes.Where(recipe =>
+                {
+                    var recipeIngredientSet = new HashSet<string>(recipe.Keywords, StringComparer.OrdinalIgnoreCase);
+                    matchCount = recipeIngredientSet.Intersect(ingredientSet, StringComparer.OrdinalIgnoreCase).Count();
+                    return (matchCount == queryKeywords.Length);
+                }).ToList();
+            });
 
         }
         public List<Recipe> GetRecipesThatInclude(List<Recipe> recipes, string[] ingredients)
@@ -87,7 +90,7 @@ namespace MealPlaner.Services
                 Console.WriteLine($"Time elapesd filtering with regex: {stopwatch.Elapsed.TotalSeconds}");
             }
 
-            var filteredRecipes = FilterRecipesByIngredientMatch(recipes, queryParams.Ingredients, fast, queryParams.DesiredIngredientPercentage);
+            var filteredRecipes = FilterRecipesByIngredientMatch(recipes, queryParams.Ingredients, fast, queryParams.DesiredIngredientMatchPercentage);
             Console.WriteLine("completed filtering by ingredient");
             return filteredRecipes;
         }

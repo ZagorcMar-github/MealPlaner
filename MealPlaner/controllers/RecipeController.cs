@@ -72,10 +72,15 @@ namespace MealPlaner.controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError("error");
+                _logger.LogError($"error updating recipe: {ex.Message}");
                 return StatusCode(StatusCodes.Status500InternalServerError, "An error occurred while processing your request.");
             }
         }
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="id"></param>
+        /// <returns></returns>
         [Authorize]
         [HttpDelete("DeleteRecipe")]
         public async Task<IActionResult> DeleteRecipe(int id)
@@ -91,8 +96,8 @@ namespace MealPlaner.controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError("error");
-                return BadRequest(ex);
+                _logger.LogError($"error deleting Recipe: {ex.Message}");
+                return StatusCode(StatusCodes.Status500InternalServerError, "An error occurred while processing your request.");
             }
             finally { }
         }
@@ -113,8 +118,8 @@ namespace MealPlaner.controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError("Error creating recipe: {Message}", ex.Message);
-                return BadRequest(ex);
+                _logger.LogError($"Error creating recipe: {ex.Message}" );
+                return StatusCode(StatusCodes.Status500InternalServerError, "An error occurred while processing your request.");
             }
         }
         [Authorize]
@@ -131,12 +136,12 @@ namespace MealPlaner.controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError("error");
-                return BadRequest(ex);
+                _logger.LogError($"error generating meal plan: {ex.Message}");
+                return StatusCode(StatusCodes.Status500InternalServerError, "An error occurred while processing your request.");
             }
         }
-        [HttpGet("getFilteredRecipes")]
-        public async Task<IActionResult> GetFilteredRecipes([FromQuery] QueryParams querryParams, int page, int pageLimit)
+        [HttpPost("getFilteredRecipes")]
+        public async Task<IActionResult> GetFilteredRecipes([FromBody] QueryParams querryParams, int page, int pageLimit)
         {
             try
             {
@@ -145,11 +150,25 @@ namespace MealPlaner.controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex.Message);
-                return BadRequest("internal server error");
-                throw;
+                _logger.LogError($"Error filtering recipe: {ex.Message}");
+                return StatusCode(StatusCodes.Status500InternalServerError, "An error occurred while processing your request.");
             }
 
+        }
+        [HttpGet("GetRecipesWithName")]
+        public async Task<IActionResult> GetRecipesWithName(string name) 
+        {
+            try
+            {
+                var response = await _recipeCRUD.GetRecipeByName(name);
+                return Ok(response);
+
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error ");
+                return StatusCode(StatusCodes.Status500InternalServerError, "An error occurred while processing your request.");
+            }
         }
         [HttpGet("getRecipes")]
         public async Task<IActionResult> GetRecipes([FromQuery] int page, int pageLimit)
@@ -158,7 +177,7 @@ namespace MealPlaner.controllers
             {
                 if (pageLimit > 100)
                 {
-                    return BadRequest("please enter a page limit under 100");
+                    return BadRequest("Please enter a page limit under 100");
                 }
                 (bool succes, PagedQuerryResult queryResult) = _recipeCRUD.GetRecipes(page, pageLimit);
                 if (succes)
@@ -168,14 +187,13 @@ namespace MealPlaner.controllers
                 }
                 else
                 {
-                    return BadRequest("recipes were not found");
+                    return BadRequest("Recipes were not found");
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex.Message);
-                return BadRequest("internal server error");
-                throw;
+                return StatusCode(StatusCodes.Status500InternalServerError, "An error occurred while processing your request.");
             }
 
         }
@@ -188,12 +206,13 @@ namespace MealPlaner.controllers
                 st.Start();
                 var prefrences= _recipeCRUD.GetUniquePreferences();
                 st.Stop();
-                Console.WriteLine($"time spent getting keywords {st.Elapsed}");
+                Console.WriteLine($"Time spent getting keywords {st.Elapsed}");
                 return Ok(prefrences);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex.Message);
+                _logger.LogError($"error getting preferences {ex.Message}");
+                return StatusCode(StatusCodes.Status500InternalServerError, "An error occurred while processing your request.");
                 throw;
             }
         }
@@ -206,12 +225,13 @@ namespace MealPlaner.controllers
                 st.Start();
                 var ingredients = _recipeCRUD.GetUniqueIngredients();
                 st.Stop();
-                Console.WriteLine($"time spent getting ingredients {st.Elapsed}");
+                Console.WriteLine($"Time spent getting ingredients {st.Elapsed}");
                 return Ok(ingredients);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex.Message);
+                _logger.LogError($"error getting getting unique ingredients {ex.Message}");
+                return StatusCode(StatusCodes.Status500InternalServerError, "An error occurred while processing your request."); ;
                 throw;
             }
         }

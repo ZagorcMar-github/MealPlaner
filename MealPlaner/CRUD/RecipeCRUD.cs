@@ -61,7 +61,7 @@ namespace MealPlaner.CRUD
                 baseRecipes = baseRecipes.Where(x => !prev5UsedRecipes.Contains(x.RecipeId)).ToList();
                 if (!meals.Preferences.IsNullOrEmpty())
                 {
-                    baseRecipes = filter.FilterByKeywords(baseRecipes, meals.Preferences);
+                    baseRecipes = await filter.FilterByKeywords(baseRecipes, meals.Preferences);
                 }
 
                 CreateRangedProcentageValues(meals.DailyMeals); // creates a procentage value for each meal that coresponds to the amount of meals a day.
@@ -354,7 +354,17 @@ namespace MealPlaner.CRUD
         {
             throw new NotImplementedException();
         }
-
+        public async Task<List<RecipeUpdateDto>> GetRecipeByName(string recipeName)
+        {
+            var recipes = await _recipesCollection.Find(x => x.Name.Contains(recipeName)).ToListAsync();
+            List<RecipeUpdateDto> recipesResponse= new List<RecipeUpdateDto>(); 
+            foreach (var recipe in recipes)
+            {
+                RecipeUpdateDto recipeResponse = new RecipeUpdateDto(recipe);
+                recipesResponse.Add(recipeResponse);
+            }
+            return recipesResponse;
+        }
         public async Task<RecipeUpdateDto> GetRecipe(int id)
         {
             try
@@ -389,6 +399,10 @@ namespace MealPlaner.CRUD
 
                 var cachingKeyString = "";
                 Type type = queryParams.GetType();
+                if (pageSize > 100)
+                {
+                    return (false, querryResult);
+                }
                 foreach (PropertyInfo property in type.GetProperties())
                 {
                     var propertyValue = property.GetValue(queryParams, null);
@@ -407,11 +421,7 @@ namespace MealPlaner.CRUD
                     }
                 }
 
-                string cacheKey = $"{CacheKeyPrefix}{cachingKeyString}";
-                if (pageSize > 100)
-                {
-                    return (false, querryResult);
-                }
+                string cacheKey = $"{CacheKeyPrefix}{cachingKeyString}_{pageSize}";
 
                 if (_cache.TryGetValue(cacheKey, out List<Recipe> filteredRecipes))
                 {
@@ -438,26 +448,26 @@ namespace MealPlaner.CRUD
                     //applying filtered on results that are allredy in memory
                     Stopwatch stopwatch2 = new Stopwatch { };
                     stopwatch2.Start();
-                    filteredList = parallelFilter.FilterByKeywords(filteredList, queryParams.Keywords);
+                    filteredList = await parallelFilter.FilterByKeywords(filteredList, queryParams.Keywords);
                     stopwatch2.Stop();
-                    Console.WriteLine($"Time spent filtering by ingredient in memory: {stopwatch2.Elapsed}");
+                    Console.WriteLine($"Time spent filtering by keyword in memory: {stopwatch2.Elapsed}");
                 }
                 if (!queryParams.Ingredients.IsNullOrEmpty())
                 {
                     //applying filtered on results that are allredy in memory
-                    Stopwatch stopwatch2 = new Stopwatch { };
-                    stopwatch2.Start();
+                    Stopwatch stopwatch3 = new Stopwatch { };
+                    stopwatch3.Start();
                     filteredList = await parallelFilter.FilterByIngridents(filteredList, queryParams, true);
-                    stopwatch2.Stop();
-                    Console.WriteLine($"Time spent filtering by ingredient in memory: {stopwatch2.Elapsed}");
+                    stopwatch3.Stop();
+                    Console.WriteLine($"Time spent filtering by ingredient in memory: {stopwatch3.Elapsed}");
                 }
                 if (!queryParams.ExcludeIngredients.IsNullOrEmpty())
                 {
-                    Stopwatch stopwatch3 = new Stopwatch { };
-                    stopwatch3.Start();
+                    Stopwatch stopwatch4 = new Stopwatch { };
+                    stopwatch4.Start();
                     filteredList = parallelFilter.FilterByExcludedIngredients(filteredList, queryParams.ExcludeIngredients);
-                    stopwatch3.Stop();
-                    Console.WriteLine($"Time spent filtering by excluded in memory: {stopwatch3.Elapsed}");
+                    stopwatch4.Stop();
+                    Console.WriteLine($"Time spent filtering by excluded in memory: {stopwatch4.Elapsed}");
 
                 }
 
@@ -691,6 +701,8 @@ namespace MealPlaner.CRUD
                 throw;
             }
         }
+
+        
     }
 
 
