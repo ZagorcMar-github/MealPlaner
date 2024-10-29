@@ -6,12 +6,20 @@ or meal planning apps by providing dynamically generated meal plans based on use
 dietary restrictions, and nutritional goals.
 With a focus on customization, the API enables users to receive meal suggestions that meet specific caloric and macronutrient
 requirements while taking into account any food allergies or intolerances.
-data was prcoured from  the folowwing sources:
+
+
+Data Accuracy Disclaimer
+
+Please note that the data entries in this project are not 100% accurate. While we have made considerable efforts to exclude incorrect or inconsistent entries (esspecialy with alergens),
+this process involved manual curation and may still contain minor inaccuracies. This dataset should be used with an understanding of these potential limitations.
+We appreciate your understanding and recommend verifying critical data points if precision is necessary for your application.
+data was prcoured from  the folowing sources:
 
 https://www.kaggle.com/datasets/irkaal/foodcom-recipes-and-reviews
 
 https://www.kaggle.com/datasets/realalexanderwei/food-com-recipes-with-ingredients-and-tags
 
+since the data entries are not 100% accurate 
 Features
 
     Custom Meal Plans: Generate meal plans based on calories, macronutrient ratios (protein, carbs, fat)
