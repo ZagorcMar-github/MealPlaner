@@ -38,15 +38,34 @@ namespace MealPlaner.CRUD
             _userCRUD=userCRUD;
             _headerRequestDecoder= headerRequestDecoder;    
         }
+        /// <summary>
+        /// Generates an optimized meal plan based on user-defined nutritional goals, available ingredients, and specific meal preferences. 
+        /// Utilizes previous user history to avoid recipe repetition and dynamically adjusts nutritional distribution across meals.
+        /// - **User Authentication**: Extracts and verifies the user ID from the JWT token in the HTTP context.
+        /// - **Ingredient Filtering**: Uses specified preferences and ingredients to filter recipes, removing any that have been recently used.
+        /// - **Nutritional Goal Adjustment**: Iteratively updates nutritional goals as recipes are assigned to each meal, ensuring balance across the plan.
+        /// - **Nutritional Proportions**: Distributes nutritional goals proportionally based on specified meal percentages, ensuring varied recipe selection for each meal.
+        /// </summary>
+        /// <param name="httpContext">The <see cref="HttpContext"/> object used to extract the user ID from the JWT token in the request header.</param>
+        /// <param name="meals">An instance of <see cref="MealsDto"/> containing preferences, nutritional goals, 
+        /// and meal specifications including must-include and must-exclude ingredients for each meal.</param>
+        /// <returns>Returns a <see cref="List{RecipeUpdateDto}"/> representing an optimized list of recipes for each meal specified in the <paramref name="meals"/> parameter. 
+        /// Each recipe is tailored to meet the user's nutritional targets and ingredient preferences.
+        /// If the user ID is invalid, returns an empty list.</returns>
 
-        public async Task<List<Recipe>> GenerateMealPlan(HttpContext httpContext,MealsDto meals)
+
+        /// <exception cref="ArgumentException">Thrown if required fields in the <paramref name="meals"/> parameter are missing or invalid.</exception>
+        /// <exception cref="InvalidOperationException">Thrown if an error occurs while filtering or selecting optimal recipes.</exception>
+        /// <exception cref="Exception">Handles any other general exceptions, rethrowing them for logging or further handling.</exception>
+
+        public async Task<List<RecipeUpdateDto>> GenerateMealPlan(HttpContext httpContext,MealsDto meals)
         {
             try {
                 int userId = 0;
                 Int32.TryParse(_headerRequestDecoder.ExtractUserIdFromJwt(httpContext), out userId);
                 if (userId <= 0) 
                 {
-                    return new List<Recipe>();
+                    return new List<RecipeUpdateDto>();
                 }
 
                 ParallelIngredientFilter filter = new ParallelIngredientFilter(_recipesCollection);
@@ -55,8 +74,8 @@ namespace MealPlaner.CRUD
                 int[] prev5UsedRecipes = user.PreviusRecipeIds.TakeLast(5).ToArray();
                 
                 List<Recipe> baseRecipes = GlobalVariables.Recipes;
-                List<Recipe>? optimalRecipes = new List<Recipe> { };
-                List<Recipe>? keywordFilteredRecipes = new List<Recipe> { };
+                List<RecipeUpdateDto>? optimalRecipes = new List<RecipeUpdateDto> { };
+                //excluding the previus 5 used recipes form the db
                 baseRecipes = baseRecipes.Where(x => !prev5UsedRecipes.Contains(x.RecipeId)).ToList();
                 if (!meals.Preferences.IsNullOrEmpty())
                 {
@@ -70,6 +89,7 @@ namespace MealPlaner.CRUD
                                                                 // if we add another meal split in to 4 equal percentile pieces like:
                                                                 //                   breakfast (calories) 0.25 lunch: 0.50 dinner:0.75 and snack:1  
                                                                 // thus we ensure a slight bit of variation to the generated recipes in each iteration 
+                                                                // the formula for the desired pocentile value (currentProcentileValue/1- sum(procentileValuesUptoNow))
 
                 foreach (var (key, mealCharacteristics) in meals.Meals)
                 {
@@ -83,7 +103,8 @@ namespace MealPlaner.CRUD
                     {
                         mealRecipes = filter.FilterByExcludedIngredients(mealRecipes, mealCharacteristics.MustExclude.ToArray());
                     }
-                    var MealNutritionalGoal = getRawNutritionalValue(meals.Goals, mealCharacteristics); // get the amount of (raw non procentile) nutrition a meal should consist of
+                    // get the amount of (raw, non procentile) nutrition a meal should consist of
+                    var MealNutritionalGoal = getRawNutritionalValue(meals.Goals, mealCharacteristics); 
                     await NormalizeNutritionalValues(MealNutritionalGoal);
                     Stopwatch stopwatch = Stopwatch.StartNew();
                     stopwatch.Start();
@@ -100,8 +121,13 @@ namespace MealPlaner.CRUD
                         meals.Goals.TargetSugarContent = meals.Goals.TargetSugarContent - foundRecipe.SugarContent / foundRecipe.RecipeServings;
                         meals.Goals.TargetFatContent = meals.Goals.TargetFatContent - foundRecipe.FatContent / foundRecipe.RecipeServings;
                         meals.Goals.TargetCalories = meals.Goals.TargetCalories - foundRecipe.Calories / foundRecipe.RecipeServings;
+                        optimalRecipes.Add(new RecipeUpdateDto(foundRecipe));
                     }
-                    optimalRecipes.Add(foundRecipe);
+                    else
+                    {
+                        optimalRecipes.Add(new RecipeUpdateDto());
+                    }
+
 
                 }
                 return optimalRecipes;
@@ -112,6 +138,21 @@ namespace MealPlaner.CRUD
             }
 
         }
+        /// <summary>
+        /// Identifies the optimal recipe from a list of recipes based on the specified normalized nutritional goals.
+        /// Calculates the Euclidean distance between each recipe's nutritional properties and the target nutritional goals,
+        /// returning the recipe that best matches these goals.
+        /// - **Nutritional Matching**: Calculates the Euclidean distance between each recipe’s nutritional values and the target goals,
+        /// ranking recipes by proximity to these goals. This ensures that the recipe selected is nutritionally close to the target values.
+        /// - **Random Selection from Top Matches**: From the top five closest matches, selects one recipe at random to introduce slight variation.
+        /// </summary>
+        /// <param name="recipes">A <see cref="List{Recipe}"/> containing candidate recipes to be evaluated against the nutritional goals.</param>
+        /// <param name="normalizedNutritionalGoals">An instance of <see cref="NutritionalGoals"/> containing target nutritional values,
+        /// which are normalized to align with each recipe's nutritional content.</param>
+        /// <returns>Returns a <see cref="Recipe"/> object that has the closest match to the specified nutritional goals based on
+        /// the Euclidean distance calculation. If no recipes are found, returns a default empty recipe.</returns>
+        /// <exception cref="InvalidOperationException">Thrown if any property values on the recipe or nutritional goals are invalid or inaccessible.</exception>
+
         private Recipe FindOptimalRecipe(List<Recipe> recipes, NutritionalGoals normalizedNutritionalGoals)
         {
             var recs = recipes.Select(recipe =>
@@ -168,6 +209,19 @@ namespace MealPlaner.CRUD
             };
             return mealGoal;
         }
+        /// <summary>
+        /// Calculates the raw nutritional values for a single meal based on the user's  nutritional goals
+        /// and the specified proportions for each nutrient in the meal characteristics.
+        /// This method generates a specific nutritional target for an individual meal by multiplying each component of the 
+        /// spevified goal by the corresponding target percentage in the meal characteristics. This allows for tailored meal planning
+        /// that aligns with nutritional objectives.
+        /// </summary>
+        /// <param name="dailyGoal">An instance of <see cref="NutritionalGoals"/> representing the user's total nutritional goals.</param>
+        /// <param name="mealCharacteristics">An instance of <see cref="MealCharacteristics"/> containing target proportions 
+        /// for each nutritional component, defining the percentage of the daily goal that each meal should fulfill.</param>
+        /// <returns>Returns a <see cref="NutritionalGoals"/> object containing the calculated nutritional targets for the meal,
+        /// with each nutrient adjusted according to the specified proportions in <paramref name="mealCharacteristics"/>.</returns>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="dailyGoal"/> or <paramref name="mealCharacteristics"/> is null.</exception>
         private async Task<bool> NormalizeNutritionalValues(NutritionalGoals rawMealNutritionalValues)
         {
             try
@@ -207,6 +261,18 @@ namespace MealPlaner.CRUD
 
             }
         }
+        /// <summary>
+        /// Adjusts the target nutritional percentages for each meal in a daily meal plan to ensure that they proprtionaly return the same value taking the last goal result 
+        /// example: breakfast procent calores = 0.5 calorieGoal = 100  breakfast value 50  lunch calorie procent: 0.1 it should result (if we take the calorie Goal) in 10 but we wan to use the caloriegoal-breakfastValue 
+        /// the function scales the 0.1 value to a value that would result in 10 from 50
+        /// This method iterates through each target nutritional percentage property in <see cref="MealCharacteristics"/>, adjusting 
+        /// values such that each meal's percentage contribution is balanced  This ensures that the 
+        /// nutritional goals for all meals in a day are distributed accurately and proportionally.
+        /// </summary>
+        /// <param name="mealsCharacteristics">A dictionary containing <see cref="MealCharacteristics"/> objects for each meal,
+        /// where each entry represents a specific meal and its initial target nutritional percentages.</param>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="mealsCharacteristics"/> is null.</exception>
+        /// <exception cref="InvalidOperationException">Thrown if target nutritional values are set incorrectly or are inaccessible.</exception>
 
         private void CreateRangedProcentageValues(Dictionary<string, MealCharacteristics> mealsCharacteristics)
         {
@@ -239,7 +305,7 @@ namespace MealPlaner.CRUD
                 }
             }
             stopwatch.Stop();
-            Console.WriteLine($"time spent normalizing creating ranged values: {stopwatch.Elapsed}");
+            Console.WriteLine($"time spent  creating ranged values: {stopwatch.Elapsed}");
         }
 
         public async Task<List<RecipeUpdateDto>> CreateRecipe(List<RecipeDto> recipesDto)
@@ -306,6 +372,7 @@ namespace MealPlaner.CRUD
                 recipesToInsert.Add(recipe);
                 var cleanRecipe = new RecipeUpdateDto(recipe);
                 recipesResponse.Add(cleanRecipe);
+                lastId++;
 
             }
 
@@ -313,6 +380,21 @@ namespace MealPlaner.CRUD
 
             return recipesResponse;
         }
+        /// <summary>
+        /// Normalizes a nutritional value based on the maximum and minimum values within the dataset,
+        /// adjusting for the number of servings in the recipe. This scaled value allows for comparison 
+        /// across recipes with differing serving sizes and nutritional ranges.
+        /// This method normalizes a nutritional value to a range between 0 and 1, adjusting for servings. 
+        /// Normalization allows for comparison across different recipes, helping ensure that recipes are 
+        /// evaluated consistently within a uniform scale.
+        /// </summary>
+        /// <param name="originalValue">The original nutritional value to be normalized, such as calories or fat content.</param>
+        /// <param name="maxValue">The maximum value of the nutritional component in the dataset, used as the upper bound for normalization.</param>
+        /// <param name="minValue">The minimum value of the nutritional component in the dataset, used as the lower bound for normalization.</param>
+        /// <param name="recipeServings">The number of servings for the recipe, used to adjust the original value to a per-serving basis.</param>
+        /// <returns>Returns a <see cref="double"/> representing the normalized nutritional value. If `maxValue` equals `minValue`, returns 0 to avoid division by zero.</returns>
+        /// <exception cref="Exception">Re-throws any exceptions encountered, allowing for error handling at the calling level.</exception>
+
         private double getNormalizedValue(double originalValue, double maxValue, double minValue, double recipeServings)
         {
             try
@@ -330,15 +412,33 @@ namespace MealPlaner.CRUD
 
         }
 
+        /// <summary>
+        /// Deletes a recipe from the database based on the specified recipe ID.
+        /// Returns a tuple indicating whether the recipe was found and successfully deleted, along with 
+        /// the details of the deleted recipe if applicable.
+        /// This method first checks if the recipe exists by retrieving it based on the given ID. If found, 
+        /// it proceeds to delete the recipe from the database and returns the recipe details; otherwise, it 
+        /// returns `false` for the `found` flag and `null` for the deleted recipe.
+        /// </summary>
+        /// <param name="id">The unique identifier of the recipe to delete.</param>
+        /// <returns>Returns a tuple <see cref="(bool found, RecipeUpdateDto DeletedRecipe)"/> where:
+        /// - **found** is a <see cref="bool"/> indicating whether the recipe was found.
+        /// - **DeletedRecipe** is a <see cref="RecipeUpdateDto"/> containing the details of the deleted recipe, or null if no recipe was found.</returns>
+        /// <exception cref="Exception">Logs and rethrows any exceptions encountered during the deletion process.</exception>
 
-        public async Task<RecipeUpdateDto> DeleteRecipe(int id)
+        public async Task<( bool found,RecipeUpdateDto DeletedRecipe)> DeleteRecipe(int id)
         {
             try
             {
+
                 var deletedRecipe = await GetRecipe(id);
+                if (deletedRecipe == null) 
+                {
+                    return (false, null);
+                }
                 var filter = Builders<Recipe>.Filter.Eq(r => r.RecipeId, id);
                 await _recipesCollection.DeleteOneAsync(filter);
-                return deletedRecipe;
+                return (true,deletedRecipe);
             }
             catch (Exception ex)
             {
@@ -347,11 +447,17 @@ namespace MealPlaner.CRUD
             }
 
         }
+        /// <summary>
+        /// Retrieves a list of recipes that contain the specified name or partial name. 
+        /// Returns each matched recipe as a `RecipeUpdateDto` for easy display or further processing.
+        /// Searches for recipes that include the specified `recipeName` within their names, 
+        /// making it useful for broad searches or finding similarly named recipes.
+        /// </summary>
+        /// <param name="recipeName">The name or partial name to search for within recipe names.</param>
+        /// <returns>Returns a <see cref="List{RecipeUpdateDto}"/> containing recipes that match the specified name.</returns>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="recipeName"/> is null or empty.</exception>
+        /// <exception cref="Exception">Catches any other general exceptions encountered during the retrieval process.</exception>
 
-        public Task<Recipe[]> GetMealPlan()
-        {
-            throw new NotImplementedException();
-        }
         public async Task<List<RecipeUpdateDto>> GetRecipeByName(string recipeName)
         {
             var recipes = await _recipesCollection.Find(x => x.Name.Contains(recipeName)).ToListAsync();
@@ -363,12 +469,25 @@ namespace MealPlaner.CRUD
             }
             return recipesResponse;
         }
+        /// <summary>
+        /// Retrieves a recipe by its unique ID and returns it as a `RecipeUpdateDto` if found.
+        /// This method is useful for retrieving a specific recipe by ID for display or editing purposes.
+        /// Returns null if no recipe matches the given ID.
+        /// </summary>
+        /// <param name="id">The unique identifier of the recipe to retrieve.</param>
+        /// <returns>Returns a <see cref="RecipeUpdateDto"/> containing the recipe details if found; otherwise, returns null.</returns>
+        /// <exception cref="Exception">Logs and rethrows any exceptions encountered during the retrieval process.</exception>
+
         public async Task<RecipeUpdateDto> GetRecipe(int id)
         {
             try
             {
-                var result = await _recipesCollection.Find(x => x.RecipeId == id).FirstOrDefaultAsync(); 
+                var result = await _recipesCollection.Find(x => x.RecipeId == id).FirstOrDefaultAsync();
+                if (result == null) {
+                    return null;
+                }
                 RecipeUpdateDto cleanResult = new RecipeUpdateDto(result);
+                 
                 return cleanResult;
 
             }
@@ -381,6 +500,22 @@ namespace MealPlaner.CRUD
 
         }
 
+        /// <summary>
+        /// Retrieves a filtered list of recipes based on specified query parameters, with support for caching and pagination.
+        /// The filtering process applies keywords, ingredient inclusions, and exclusions, optimizing with parallel processing.
+        /// - **Caching**: Results are cached with a composite key built from query parameters and page size, and a sliding expiration of 30 minutes.
+        /// - **Filtering**: Applies keyword, ingredient, and exclusion filters sequentially, optimizing with in-memory parallel filtering to reduce I/O overhead.
+        /// - **Performance Measurement**: Logs timing for each filtering step, providing insights into processing efficiency.
+        /// </summary>
+        /// <param name="queryParams">An instance of <see cref="QueryParams"/> containing filters such as keywords, ingredients to include, 
+        /// and ingredients to exclude. Determines which recipes match the specified criteria.</param>
+        /// <param name="page">The page number for pagination, starting from 1. Defaults to 1 if not specified.</param>
+        /// <param name="pageSize">The number of recipes per page. Defaults to 10 if not specified, with a maximum limit of 100.</param>
+        /// <returns>Returns a tuple <see cref="(bool checkRequest, PagedQuerryResult result)"/> where:
+        /// - **checkRequest** is a <see cref="bool"/> indicating whether the request parameters were valid.
+        /// - **result** is a <see cref="PagedQuerryResult"/> containing the filtered and paginated recipes, along with pagination metadata.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown if the specified `pageSize` exceeds 100.</exception>
+        /// <exception cref="Exception">Logs and rethrows any general exceptions encountered during the filtering or caching process.</exception>
 
         public async Task<(bool checkRquest, PagedQuerryResult result)> GetFilteredRecipes(QueryParams queryParams, int page = 1, int pageSize = 10)
         {
@@ -521,10 +656,18 @@ namespace MealPlaner.CRUD
                 _logger.LogError($"an exception was cought while getting all recipes  : {ex.Message}");
                 throw;
             }
-
-
-
         }
+        /// <summary>
+        /// Updates an existing recipe in the database based on the provided `RecipeUpdateDto`.
+        /// If changes are detected, the method updates only modified fields, ensuring efficient database operations.
+        /// - **Logging**: Logs update success or failure messages, including when no changes are detected.
+        /// - **Change Detection**: Only fields that have changed from their existing values are updated in the database.
+        /// </summary>
+        /// <param name="recipeUpdate">An instance of <see cref="RecipeUpdateDto"/> containing the updated values for the recipe.</param>
+        /// <returns>Returns an updated <see cref="RecipeUpdateDto"/> object representing the modified recipe if the update is successful. 
+        /// If the recipe is not found, returns null.</returns>
+        /// <exception cref="Exception">Logs and rethrows any exceptions encountered during the update process.</exception>
+
         public async Task<RecipeUpdateDto> UpdateRecipe(RecipeUpdateDto recipeUpdate)
         {
             try
@@ -562,6 +705,17 @@ namespace MealPlaner.CRUD
                 throw;
             }
         }
+        /// <summary>
+        /// Builds a list of update definitions for fields in the recipe that have changed compared to the current values in the database.
+        /// Used to dynamically create update operations based on modified fields only.
+        /// This method iterates through each relevant property, adding an update definition for fields that differ from the database values.
+        /// </summary>
+        /// <param name="existingRecipe">The current recipe instance in the database, used to compare with the update values.</param>
+        /// <param name="recipeUpdate">An instance of <see cref="RecipeUpdateDto"/> containing the desired updates.</param>
+        /// <returns>Returns a <see cref="List{UpdateDefinition{Recipe}}"/> representing the update operations to be applied.</returns>
+
+
+
         private async Task<List<UpdateDefinition<Recipe>>> BuildUpdateDefinition(Recipe existingRecipe, RecipeUpdateDto recipeUpdate)
         {
 
@@ -582,6 +736,16 @@ namespace MealPlaner.CRUD
 
             return updateDefinition;
         }
+        /// <summary>
+        /// Adds an update definition to the specified list if the new value differs from the existing value.
+        /// Compares the current and new values and adds an update operation only if they are not equal.
+        /// </summary>
+        /// <typeparam name="T">The type of the field being updated.</typeparam>
+        /// <param name="updateDefinition">The list of update definitions to which the new update operation is added if there is a change.</param>
+        /// <param name="existingValue">The current value of the field in the database.</param>
+        /// <param name="newValue">The new value provided in the update request.</param>
+        /// <param name="field">An expression specifying the field in the `Recipe` document to update.</param>
+
         private void UpdateIfChanged<T>(List<UpdateDefinition<Recipe>> updateDefinition, T existingValue, T newValue, Expression<Func<Recipe, T>> field)
         {
             if (!EqualityComparer<T>.Default.Equals(existingValue, newValue))
@@ -589,6 +753,18 @@ namespace MealPlaner.CRUD
                 updateDefinition.Add(Builders<Recipe>.Update.Set(field, newValue));
             }
         }
+        /// <summary>
+        /// Updates the nutritional values of a recipe if any changes are detected, including normalization of nutritional values.
+        /// Each nutritional component is checked for changes, and both raw and normalized values are updated accordingly.
+        /// - **Normalization**: Normalizes nutritional values based on min and max values in the dataset, allowing for consistent comparisons.
+        /// - **Field Matching**: Ensures both raw and normalized values are updated where changes are detected.
+        /// </summary>
+        /// <param name="updateDefinition">The list of update definitions to which the new update operations are added.</param>
+        /// <param name="existingRecipe">The current recipe instance in the database, used to compare with updated nutritional values.</param>
+        /// <param name="recipeUpdate">An instance of <see cref="RecipeUpdateDto"/> containing the updated nutritional values.</param>
+        /// <returns>Returns a boolean value indicating successful update preparation.</returns>
+        /// <exception cref="Exception">Catches and rethrows exceptions encountered during normalization or update definition creation.</exception>
+
         private async Task<bool> UpdateNutritionalValue(List<UpdateDefinition<Recipe>> updateDefinition, Recipe existingRecipe, RecipeUpdateDto recipeUpdate)
         {
             var nutritionalFieldsMinMax = new Dictionary<string, (double min, double max)> { };
@@ -664,6 +840,13 @@ namespace MealPlaner.CRUD
 
 
         }
+        /// <summary>
+        /// Retrieves a distinct list of unique preferences (keywords) from all recipes in the global collection.
+        /// This method consolidates keywords across recipes to provide a comprehensive list of available preferences.
+        /// This method is useful for generating a list of preferences that can be used for filtering, searching, or categorizing recipes.
+        /// </summary>
+        /// <returns>Returns a <see cref="List{string}"/> containing unique keywords from all recipes.</returns>
+        /// <exception cref="Exception">Catches and rethrows any exceptions encountered during the retrieval process.</exception>
 
         public List<string> GetUniquePreferences()
         {
@@ -682,6 +865,14 @@ namespace MealPlaner.CRUD
                 throw;
             }
         }
+        /// <summary>
+        /// Retrieves a distinct list of unique ingredients from all recipes in the global collection.
+        /// This method consolidates ingredients across recipes to provide a comprehensive list of available ingredients.
+        /// Useful for generating a list of ingredients that can be used for filtering, searching, or ingredient-based categorization.
+        /// </summary>
+        /// <returns>Returns a <see cref="List{string}"/> containing unique ingredients from all recipes.</returns>
+        /// <exception cref="Exception">Catches and rethrows any exceptions encountered during the retrieval process.</exception>
+
         public List<string> GetUniqueIngredients()
         {
             try

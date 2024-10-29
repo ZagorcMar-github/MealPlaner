@@ -20,6 +20,7 @@ namespace MealPlaner.Models
         public string Username { get; set; }
         public string PasswordHash { get; set; }
         public string Subscription { get; set; }
+        public string Admin { get; set; } ="0";
         public int[]? PreviusRecipeIds { get; set; }
 
 

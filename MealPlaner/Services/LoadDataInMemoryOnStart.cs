@@ -20,6 +20,16 @@ namespace MealPlaner.Services
             _settings = settings.Value;
 
         }
+        /// <summary>
+        /// Initializes a MongoDB client and loads all recipes from the database into globally accessible storage for in-memory access.
+        /// Typically used to preload data at the application's startup.
+        /// - **Database Initialization**: Creates a MongoDB client and connects to the specified database and collection.
+        /// - **Global Storage**: Stores the retrieved recipes in `GlobalVariables.Recipes` for efficient in-memory access throughout the application.
+        /// - **Cancellation Support**: Supports cancellation during the data retrieval process.
+        /// </summary>
+        /// <param name="cancellationToken">A <see cref="CancellationToken"/> that can be used to cancel the loading process if necessary.</param>
+        /// <exception cref="Exception">Re-throws any exceptions encountered during MongoDB initialization or data retrieval.</exception>
+
         public async Task StartAsync(CancellationToken cancellationToken)
         {
 

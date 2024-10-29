@@ -1,5 +1,7 @@
 ﻿using MealPlaner.CRUD.Interfaces;
+using MealPlaner.Identity;
 using MealPlaner.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace MealPlaner.controllers
@@ -105,14 +107,19 @@ namespace MealPlaner.controllers
                 return StatusCode(500, "somthing went wrong, contact support if the issue is not resolved");
             }
         }
+        [Authorize(CustomIdentityConstants.UserAdminPolicyName)]
         [HttpDelete("DeleteUser")]
         public async Task<IActionResult> DeleteUser(int id)
         {
             try
             {
-                await _userCRUD.DeleteUser(id);
-
-                return Ok();
+                
+                var result =await _userCRUD.DeleteUser(id);
+                if (result == null) 
+                {
+                    return BadRequest($"User with id {id} not found");
+                }
+                return Ok(result);
             }
             catch (Exception ex)
             {

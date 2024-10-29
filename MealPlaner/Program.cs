@@ -74,6 +74,7 @@ builder.Services.AddAuthentication(x =>
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy(CustomIdentityConstants.UserSubtierPolicyName, p => p.RequireClaim(CustomIdentityConstants.UserSubtierClaimName, "premium"));
+    options.AddPolicy(CustomIdentityConstants.UserAdminPolicyName, p => p.RequireClaim(CustomIdentityConstants.UserAdminClaimName));
 });
 
 

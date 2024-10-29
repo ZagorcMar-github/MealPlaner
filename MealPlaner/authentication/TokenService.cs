@@ -26,6 +26,10 @@ namespace MealPlaner.authentication
                 if (user.Subscription != null) {
                     claims.Add(new Claim(CustomIdentityConstants.UserSubtierClaimName, user.Subscription));
                 }
+                if (user.Admin =="1")
+                {
+                    claims.Add(new Claim(CustomIdentityConstants.UserAdminClaimName, user.Admin));
+                }
 
                 var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(TokenSecret)!);
                 var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
@@ -35,7 +39,6 @@ namespace MealPlaner.authentication
                     issuer: "someGuy",
                     audience: "mySpecialsite",
                     signingCredentials: creds
-
                     );
                 var jwt = new JwtSecurityTokenHandler().WriteToken(token);
                 Console.WriteLine(jwt);

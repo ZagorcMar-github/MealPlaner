@@ -124,6 +124,10 @@ namespace MealPlaner.CRUD
             try
             {
                 var deletedUser = await GetUser(id);
+                if (deletedUser == null) 
+                {
+                    return null;
+                }
                 var filter = Builders<User>.Filter.Eq(r => r.UserId, id);
                 await _usersCollection.DeleteOneAsync(filter);
                 return deletedUser;
@@ -140,6 +144,9 @@ namespace MealPlaner.CRUD
             try
             {
                 var user = await _usersCollection.Find(x => x.UserId == id).FirstOrDefaultAsync();
+                if (user == null) {
+                    return null;
+                }
                 UserResponseDto userResponse = new UserResponseDto(user);
 
 

@@ -1,5 +1,5 @@
-﻿using System.ComponentModel.DataAnnotations;
-using System.Security.Cryptography.X509Certificates;
+﻿using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
 
 namespace MealPlaner.Models
 {
@@ -20,7 +20,10 @@ namespace MealPlaner.Models
         public double HeightCm { get; set; }
         public double WeightKg { get; set; }
         public string Name { get; set; }
+        [DefaultValue("free")]
         public string Subscription { get; set; }
+        [DefaultValue("0")]
+        public string Admin { get; set; }
         public UserDto() { }
         
         public UserDto(User user) {
@@ -33,6 +36,7 @@ namespace MealPlaner.Models
             WeightKg = user.WeightKg;
             Name = user.Name;
             Subscription = user.Subscription;
+            Admin = user.Admin;
 
         }
 

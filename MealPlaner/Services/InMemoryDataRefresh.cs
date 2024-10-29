@@ -22,6 +22,13 @@ namespace MealPlaner.Services
                 recipesDatabaseSettings.Value.RecipesCollectionName);
             _logger = logger;
         }
+        /// <summary>
+        /// Reloads all recipes from the database and stores them in globally accessible storage for in-memory access.
+        /// This method can be used to refresh in-memory data after changes to the recipes collection.
+        /// - **Global Storage**: Updates the global `Recipes` list in `GlobalVariables` with the latest recipes from the database.
+        /// - **Logging**: Logs information messages on successful data loading and error messages if loading fails.
+        /// </summary>
+        /// <exception cref="Exception">Logs and rethrows any exceptions encountered during the data retrieval process.</exception>
 
         public async Task ReloadData() 
         {

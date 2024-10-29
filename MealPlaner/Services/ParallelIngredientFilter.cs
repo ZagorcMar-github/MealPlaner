@@ -18,7 +18,14 @@ namespace MealPlaner.Services
         {
             _recipesCollection = recipesCollection;
         }
-
+        /// <summary>
+        /// Filters recipes to exclude any that contain ingredients specified in the query. 
+        /// Returns only recipes where none of the specified ingredients are present.
+        /// Uses case-insensitive matching to compare ingredients in each recipe against the excluded ingredients in `queryIngredients`.
+        /// </summary>
+        /// <param name="recipes">A list of <see cref="Recipe"/> objects to filter.</param>
+        /// <param name="queryIngredients">An array of ingredient names to exclude. Recipes containing any of these ingredients will be filtered out.</param>
+        /// <returns>Returns a filtered <see cref="List{Recipe}"/> where none of the recipes contain the specified excluded ingredients.</returns>
         public List<Recipe> FilterByExcludedIngredients(List<Recipe> recipes, string[] queryIngredients) 
         {
             int matchCount = 0;
@@ -30,6 +37,14 @@ namespace MealPlaner.Services
             }).ToList();
             
         }
+        /// <summary>
+        /// Filters recipes to include only those that contain all the specified ingredients. 
+        /// Returns recipes where each recipe's ingredients fully match the `queryIngredients`.
+        /// Performs case-insensitive matching to ensure ingredients in each recipe match exactly with the provided `queryIngredients`.
+        /// </summary>
+        /// <param name="recipes">A list of <see cref="Recipe"/> objects to filter.</param>
+        /// <param name="queryIngredients">An array of ingredient names that each recipe must include. Only recipes containing all these ingredients are returned.</param>
+        /// <returns>Returns a filtered <see cref="List{Recipe}"/> containing only recipes that have all the specified ingredients.</returns>
         public List<Recipe> FilterByMustIncludeIngredients(List<Recipe> recipes, string[] queryIngredients)
         {
             int matchCount = 0;
@@ -42,6 +57,13 @@ namespace MealPlaner.Services
             }).ToList();
 
         }
+        /// <summary>
+        /// Filters recipes based on a list of required keywords, returning only those recipes where all specified keywords are present.
+        /// Uses case-insensitive matching for keyword comparison. This method executes asynchronously to optimize performance.
+        /// </summary>
+        /// <param name="recipes">A list of <see cref="Recipe"/> objects to filter.</param>
+        /// <param name="queryKeywords">An array of keywords to match. Only recipes containing all these keywords are returned.</param>
+        /// <returns>Returns a filtered <see cref="List{Recipe}"/> containing recipes that match all specified keywords.</returns>
         public async Task<List<Recipe>> FilterByKeywords(List<Recipe> recipes, string[] queryKeywords)
         {
             return await Task.Run(() =>
@@ -57,18 +79,20 @@ namespace MealPlaner.Services
             });
 
         }
-        public List<Recipe> GetRecipesThatInclude(List<Recipe> recipes, string[] ingredients)
-        {
-            int matchCount = 0;
-            var ingredientSet = new HashSet<string>(ingredients, StringComparer.OrdinalIgnoreCase);
-            return recipes.Where(recipe => {
-                var recipeIngredientSet = new HashSet<string>(recipe.RecipeIngredientParts, StringComparer.OrdinalIgnoreCase);
-                matchCount = recipeIngredientSet.Intersect(ingredientSet).Count();
-                //Console.WriteLine($"match count:{matchCount} intersectCount: {queryKeywords.Count()}");
-                return (matchCount == ingredients.Count());
-            }).ToList();
+        /// <summary>
+        /// Filters recipes based on specified ingredients, using either fast in-memory matching or database-based filtering with regex,
+        /// depending on the `fast` parameter. Supports matching based on a desired ingredient match percentage.
+        /// - **Fast Filtering**: If `fast` is true, filtering is done in-memory using exact matches. 
+        /// - **Database Filtering**: If `fast` is false, filters are applied in the database using regex, which may be slower but can handle large datasets more effectively.
+        /// - **Ingredient Match Percentage**: Filters recipes based on the percentage of required ingredients specified in `DesiredIngredientMatchPercentage`.
+        /// - **Performance Logging**: Logs the elapsed time for regex-based filtering to aid in performance monitoring and optimization.
+        /// </summary>
+        /// <param name="recipes">A list of <see cref="Recipe"/> objects to filter. This list is filtered in-memory if `fast` is true.</param>
+        /// <param name="queryParams">An instance of <see cref="QueryParams"/> containing filtering criteria such as `Ingredients` and `DesiredIngredientMatchPercentage`.</param>
+        /// <param name="fast">A boolean indicating the filtering method: if true, performs in-memory filtering; if false, uses database regex filtering.</param>
+        /// <returns>Returns a <see cref="List{Recipe}"/> containing recipes that meet the specified ingredient criteria, based on the filtering method and match percentage.</returns>
+        /// <exception cref="Exception">Catches and logs any exceptions encountered during database or in-memory filtering.</exception>
 
-        }
         public async Task<List<Recipe>> FilterByIngridents(List<Recipe> recipes, QueryParams queryParams, bool fast)
         {
             Console.WriteLine("____________________\nstarted filtering by ingredient");
