@@ -122,10 +122,16 @@ namespace MealPlaner.controllers
                 return StatusCode(StatusCodes.Status500InternalServerError, "An error occurred while processing your request.");
             }
         }
+        /// <summary>
+        /// Generates an optimal meal plan based on recipes in our database,nutritional goals,
+        /// amount of meals you want generated etc.
+        /// </summary>
+        /// <param name="meals"></param>
+        /// <returns></returns>
         [Authorize]
         [EnableRateLimiting("bucketPerUser")]
         [HttpPost("GenerateMealPlan")]
-        public async Task<IActionResult> GenerateMealPlan([FromBody] DailyMealsDto meals)
+        public async Task<IActionResult> GenerateMealPlan([FromBody] MealsDto meals)
         {
             try
             {

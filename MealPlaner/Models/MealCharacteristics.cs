@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace MealPlaner.Models
 {
-    public class DailyMealCharacteristics
+    public class MealCharacteristics
     {
         public List<string>? MustInclude { get; set; }
         public List<string>? MustExclude { get; set; }

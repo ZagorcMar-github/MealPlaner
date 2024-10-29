@@ -3,7 +3,6 @@ using MealPlaner.Models;
 using MealPlaner.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Configuration.UserSecrets;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using MongoDB.Driver;
@@ -40,7 +39,7 @@ namespace MealPlaner.CRUD
             _headerRequestDecoder= headerRequestDecoder;    
         }
 
-        public async Task<List<Recipe>> GenerateMealPlan(HttpContext httpContext,DailyMealsDto meals)
+        public async Task<List<Recipe>> GenerateMealPlan(HttpContext httpContext,MealsDto meals)
         {
             try {
                 int userId = 0;
@@ -64,7 +63,7 @@ namespace MealPlaner.CRUD
                     baseRecipes = await filter.FilterByKeywords(baseRecipes, meals.Preferences);
                 }
 
-                CreateRangedProcentageValues(meals.DailyMeals); // creates a procentage value for each meal that coresponds to the amount of meals a day.
+                CreateRangedProcentageValues(meals.Meals); // creates a procentage value for each meal that coresponds to the amount of meals a day.
                                                                 // the next iteration would take in to account the remaing nutritional amount neaded
                                                                 // so if i user puts breakfast (calories) 0.3 lunch 0.3 and  dinner: 0.3
                                                                 // the ranged characteristics would return breakfast (calories) 0.3 lunch 0.67 and dinner: 1
@@ -72,8 +71,7 @@ namespace MealPlaner.CRUD
                                                                 //                   breakfast (calories) 0.25 lunch: 0.50 dinner:0.75 and snack:1  
                                                                 // thus we ensure a slight bit of variation to the generated recipes in each iteration 
 
-
-                foreach (var (key, mealCharacteristics) in meals.DailyMeals)
+                foreach (var (key, mealCharacteristics) in meals.Meals)
                 {
                     var mealRecipes = baseRecipes;
 
@@ -85,13 +83,13 @@ namespace MealPlaner.CRUD
                     {
                         mealRecipes = filter.FilterByExcludedIngredients(mealRecipes, mealCharacteristics.MustExclude.ToArray());
                     }
-                    var MealNutritionalGoal = getRawNutritionalValue(meals.Goals, mealCharacteristics); // get the amount of nutrition a meal should consist of
+                    var MealNutritionalGoal = getRawNutritionalValue(meals.Goals, mealCharacteristics); // get the amount of (raw non procentile) nutrition a meal should consist of
                     await NormalizeNutritionalValues(MealNutritionalGoal);
                     Stopwatch stopwatch = Stopwatch.StartNew();
                     stopwatch.Start();
                     var foundRecipe = FindOptimalRecipe(mealRecipes, MealNutritionalGoal);
                     stopwatch.Stop();
-                    Console.WriteLine($"time elapsed normalizing goals: {stopwatch.Elapsed}");
+                    Console.WriteLine($"time elapsed finding optimar recipe goals: {stopwatch.Elapsed}");
                     if (foundRecipe != null)
                     {
                         meals.Goals.TargetCarbohydrateContent = meals.Goals.TargetCarbohydrateContent - foundRecipe.CarbohydrateContent / foundRecipe.RecipeServings;
@@ -125,7 +123,7 @@ namespace MealPlaner.CRUD
                 double sumOfSquares = 0;
                 foreach (var property in RecipeProperties)
                 {
-                    if (property.CanRead) // Ensure the property can be read
+                    if (property.CanRead) 
                     {
                         propertyDictionary[property.Name] = property.GetValue(recipe);
                     }
@@ -144,7 +142,7 @@ namespace MealPlaner.CRUD
                 }
                 euclidianDistance = Math.Sqrt(sumOfSquares);
                 return new { Recipe = recipe, EuclidianDistance = euclidianDistance };
-            }).OrderBy(x => x.EuclidianDistance).Take(20).ToList();
+            }).OrderBy(x => x.EuclidianDistance).Take(5).ToList();
             var random = new Random();
             Recipe optimalRecipe = new Recipe { };
             if (!recs.IsNullOrEmpty()) 
@@ -153,11 +151,8 @@ namespace MealPlaner.CRUD
             }
             return optimalRecipe;
 
-            // calculate euclidian 
-            // sort by lowest distance 
-            //get random from top 20
         }
-        private NutritionalGoals getRawNutritionalValue(NutritionalGoals dailyGoal, DailyMealCharacteristics mealCharacteristics)
+        private NutritionalGoals getRawNutritionalValue(NutritionalGoals dailyGoal, MealCharacteristics mealCharacteristics)
         {
             NutritionalGoals mealGoal = new NutritionalGoals
             {
@@ -178,30 +173,32 @@ namespace MealPlaner.CRUD
             try
             {
                 Stopwatch stopwatch = new Stopwatch { };
+                stopwatch.Start();
                 var properties = typeof(NutritionalGoals).GetProperties();
                 foreach (var item in properties)
                 {
                     var propertyName = item.Name;
 
-                    // Remove the 'Target' prefix if it exists
+                    
                     if (propertyName.StartsWith("Target"))
                     {
                         propertyName = propertyName.Substring("Target".Length);
                     }
 
-                    // Assuming you want to use this property name to get some values asynchronously
                     stopwatch.Start();
                     var minValue = await GetMinValueAsync(propertyName);
                     stopwatch.Stop();
-                    Console.WriteLine($"Time Elapsed getting min value {stopwatch.Elapsed}");
-                    Stopwatch stopwatch1 = new Stopwatch();
-                    stopwatch1.Start();
+                    //Console.WriteLine($"Time Elapsed getting min value {stopwatch.Elapsed}");
+                    //Stopwatch stopwatch1 = new Stopwatch();
+                    //stopwatch1.Start();
                     var maxValue = await GetMaxValueAsync(propertyName);
-                    stopwatch1.Stop();
-                    Console.WriteLine($" Time Elapsed getting max value: {stopwatch1.Elapsed}");
+                    //stopwatch1.Stop();
+                    //Console.WriteLine($" Time Elapsed getting max value: {stopwatch1.Elapsed}");
                     var orginalValue = (double)item.GetValue(rawMealNutritionalValues);
                     item.SetValue(rawMealNutritionalValues, getNormalizedValue(orginalValue, maxValue, minValue, 1.0));
                 }
+                stopwatch.Stop();
+                Console.WriteLine($"time spent normalizing nutritional values: {stopwatch.Elapsed}");
                 return true;
             }
             catch (Exception ex)
@@ -211,37 +208,38 @@ namespace MealPlaner.CRUD
             }
         }
 
-        private void CreateRangedProcentageValues(Dictionary<string, DailyMealCharacteristics> mealsCharacteristics)
+        private void CreateRangedProcentageValues(Dictionary<string, MealCharacteristics> mealsCharacteristics)
         {
+            Stopwatch stopwatch = new Stopwatch { };
+            stopwatch.Start();
             int mealsADay = mealsCharacteristics.Count;
-            int index = 0;
-            foreach (var (key, value) in mealsCharacteristics)
+            var properties = typeof(MealCharacteristics).GetProperties()
+                .Where(p => p.Name.StartsWith("Target") && p.Name.EndsWith("Procent"));
+            foreach (var prop in properties)
             {
-                var meal = value;
-                double scaler = (index == mealsADay - 1) ? 1 : (index == 0) ? 1 : mealsADay - index;
-
-                var properties = typeof(DailyMealCharacteristics).GetProperties()
-                    .Where(p => p.Name.StartsWith("Target") && p.Name.EndsWith("Procent"));
-
-                if (index == mealsADay - 1)
+                int index = 0;
+                double mealTargetProcentSum = 0;
+                foreach (var (key, value) in mealsCharacteristics)
                 {
-                    foreach (var prop in properties)
+
+                    var meal = value;
+                    if (index == mealsADay - 1) 
                     {
                         prop.SetValue(meal, 1);
                     }
-                }
-                else
-                {
-                    foreach (var prop in properties)
+                    else
                     {
-                        double currentValue = (double)prop.GetValue(meal);
-                        prop.SetValue(meal, currentValue * scaler);
+                        var CurrentValue= (double)prop.GetValue(meal);
+                        var rangedValue = CurrentValue / (1 - mealTargetProcentSum);
+                        mealTargetProcentSum += CurrentValue;
+                        prop.SetValue(meal, rangedValue);    
                     }
+                    index++;
+
                 }
-                index++;
             }
-
-
+            stopwatch.Stop();
+            Console.WriteLine($"time spent normalizing creating ranged values: {stopwatch.Elapsed}");
         }
 
         public async Task<List<RecipeUpdateDto>> CreateRecipe(List<RecipeDto> recipesDto)

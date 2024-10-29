@@ -10,7 +10,7 @@ namespace MealPlaner.CRUD.Interfaces
         public Task<List<RecipeUpdateDto>> GetRecipeByName(string recipeName);
         public Task<(bool checkRquest, PagedQuerryResult result)> GetFilteredRecipes(QueryParams queryParams, int page, int pageSize);
         public (bool checkRquest, PagedQuerryResult result)GetRecipes( int page, int pageSize);
-        public Task<List<Recipe>> GenerateMealPlan(HttpContext httpContext,DailyMealsDto meals);
+        public Task<List<Recipe>> GenerateMealPlan(HttpContext httpContext,MealsDto meals);
         public List<string> GetUniquePreferences();
         public List<string> GetUniqueIngredients();
 

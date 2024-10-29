@@ -17,10 +17,10 @@ namespace MealPlaner.Models
     [JsonSerializable(typeof(RecipeDto))]
     [JsonSerializable(typeof(RecipeUpdateDto))]
     [JsonSerializable(typeof(ValidationProblemDetails))]
-    [JsonSerializable(typeof(DailyMealCharacteristics))]
+    [JsonSerializable(typeof(MealCharacteristics))]
     [JsonSerializable(typeof(NutritionalGoals))]
-    [JsonSerializable(typeof(DailyMealsDto))]
-    [JsonSerializable(typeof(List<DailyMealCharacteristics>))]
+    [JsonSerializable(typeof(MealsDto))]
+    [JsonSerializable(typeof(List<MealCharacteristics>))]
     [JsonSerializable(typeof(UserUpdateDto))]
     [JsonSerializable(typeof(QueryParams))]
 
