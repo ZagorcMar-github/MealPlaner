@@ -43,7 +43,7 @@ namespace MealPlaner.Services
                     _settings.RecipesCollectionName);
 
                 var value = await _recipesCollection.Find(Builders<Recipe>.Filter.Empty).ToListAsync(cancellationToken);
-
+                //Todo: value each min maxded value update to new normalized value
                 GlobalVariables.Recipes = value;
 
             

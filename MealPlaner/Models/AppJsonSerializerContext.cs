@@ -16,6 +16,7 @@ namespace MealPlaner.Models
     [JsonSerializable(typeof(PagedQuerryResult))]
     [JsonSerializable(typeof(RecipeDto))]
     [JsonSerializable(typeof(RecipeUpdateDto))]
+    [JsonSerializable(typeof(List<RecipeUpdateDto>))]
     [JsonSerializable(typeof(ValidationProblemDetails))]
     [JsonSerializable(typeof(MealCharacteristics))]
     [JsonSerializable(typeof(NutritionalGoals))]

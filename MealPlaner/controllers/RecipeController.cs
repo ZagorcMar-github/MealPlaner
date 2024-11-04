@@ -267,48 +267,6 @@ namespace MealPlaner.controllers
             }
         }
         /// <summary>
-        /// Retrieves a paginated list of recipes from the database based on the specified page number and page limit.
-        /// Enforces a maximum page limit constraint to ensure efficient data retrieval.
-        /// </summary>
-        /// <param name="page">The page number for pagination, starting from 1. Must be a positive integer.</param>
-        /// <param name="pageLimit">The maximum number of recipes to include per page. Must be a positive integer 
-        /// and cannot exceed 100. If the page limit exceeds 100, a bad request response is returned.</param>
-        /// <returns>Returns an <see cref="IActionResult"/> containing:
-        /// - **200 OK** with a <see cref="PagedQuerryResult"/> object containing the paginated recipes if the request is successful.
-        /// - **400 Bad Request** if the page limit exceeds 100 or if no recipes are found for the specified parameters.
-        /// - **500 Internal Server Error** if an error occurs during the data retrieval process.</returns>
-        /// <exception cref="ArgumentOutOfRangeException">Thrown if the <paramref name="page"/> or <paramref name="pageLimit"/> 
-        /// parameters are invalid (e.g., negative or zero).</exception>
-        /// <exception cref="Exception">Catches any other general exceptions, returning a server error status with an appropriate message.</exception>
-
-        [HttpGet("getRecipes")]
-        public async Task<IActionResult> GetRecipes([FromQuery] int page, int pageLimit)
-        {
-            try
-            {
-                if (pageLimit > 100)
-                {
-                    return BadRequest("Please enter a page limit under 100");
-                }
-                (bool succes, PagedQuerryResult queryResult) = _recipeCRUD.GetRecipes(page, pageLimit);
-                if (succes)
-                {
-                    return Ok(queryResult);
-
-                }
-                else
-                {
-                    return BadRequest("Recipes were not found");
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex.Message);
-                return StatusCode(StatusCodes.Status500InternalServerError, "An error occurred while processing your request.");
-            }
-
-        }
-        /// <summary>
         /// Retrieves a list of unique preference types available in the recipe database, such as dietary 
         /// restrictions, cuisine types, or other preference categories. Used for filtering and recommendation purposes.
         /// </summary>

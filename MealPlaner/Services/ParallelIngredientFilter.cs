@@ -118,6 +118,20 @@ namespace MealPlaner.Services
             Console.WriteLine("completed filtering by ingredient");
             return filteredRecipes;
         }
+        /// <summary>
+        /// Filters recipes based on the match percentage of ingredients, comparing each recipe’s ingredients against a specified list of query ingredients.
+        /// Supports both fast (in-memory) matching and pattern-based matching with regular expressions for more precise results.
+        /// - **Fast Matching**: Compares ingredients in-memory for quick filtering, but may be less precise.
+        /// - **Pattern-Based Matching**: Uses regular expressions to match ingredients in each recipe for more accuracy, especially useful when exact ingredient names vary.
+        /// - **Match Percentage Calculation**: Calculates the percentage of matched ingredients based on the total ingredients in the recipe, including only recipes that meet or exceed `desiredMatchPercentage`.
+        /// </summary>
+        /// <param name="recipes">A list of <see cref="Recipe"/> objects to be filtered.</param>
+        /// <param name="queryIngredients">An array of ingredients to match against each recipe's ingredients.</param>
+        /// <param name="fast">A <see cref="bool"/> indicating the matching method: if true, uses fast in-memory matching; if false, uses pattern-based matching with regex.</param>
+        /// <param name="desiredMatchPercentage">The minimum percentage of ingredients that must match for a recipe to be included in the results. Defaults to 55%.</param>
+        /// <returns>Returns a filtered <see cref="List{Recipe}"/> where each recipe has a sufficient match percentage with the query ingredients.</returns>
+        /// <exception cref="Exception">Rethrows any exceptions encountered during filtering or regex pattern matching.</exception>
+
         private List<Recipe> FilterRecipesByIngredientMatch(List<Recipe> recipes, string[] queryIngredients,  bool fast, int desiredMatchPercentage = 55)
         {
 

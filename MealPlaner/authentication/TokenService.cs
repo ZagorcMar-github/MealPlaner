@@ -13,6 +13,17 @@ namespace MealPlaner.authentication
         private const string TokenSecret = "StoreElswhere123!0582E01C-2088-4549-84D1-3A4343F1BF19";
         private static readonly TimeSpan TokenLifetime = TimeSpan.FromDays(1);
 
+        /// <summary>
+        /// Generates a JSON Web Token (JWT) for the specified user, incorporating claims for user identity and role-based access.
+        /// - **Claims**: Includes the user's name and ID as claims. Adds subscription and admin status claims if applicable.
+        /// - **Token Security**: Signs the token using HMAC-SHA256 for integrity and security.
+        /// - **Token Lifetime**: Sets an expiration date based on `TokenLifetime`, providing time-limited access.
+        /// - **Audience and Issuer**: Specifies the intended audience and issuer for added security.
+        /// </summary>
+        /// <param name="user">An instance of <see cref="User"/> representing the user for whom the token is being generated.</param>
+        /// <returns>Returns a <see cref="string"/> containing the generated JWT token, signed and ready for client use.</returns>
+        /// <exception cref="Exception">Rethrows any exceptions encountered during token generation, allowing for higher-level handling.</exception>
+
         public string GenerateToken(User user) {
 
             try

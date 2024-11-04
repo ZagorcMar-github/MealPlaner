@@ -44,7 +44,7 @@ namespace MealPlaner.CRUD
         /// - **User Authentication**: Extracts and verifies the user ID from the JWT token in the HTTP context.
         /// - **Ingredient Filtering**: Uses specified preferences and ingredients to filter recipes, removing any that have been recently used.
         /// - **Nutritional Goal Adjustment**: Iteratively updates nutritional goals as recipes are assigned to each meal, ensuring balance across the plan.
-        /// - **Nutritional Proportions**: Distributes nutritional goals proportionally based on specified meal percentages, ensuring varied recipe selection for each meal.
+        /// - **Nutritional Proportions**: Distributes nutritional goals proportionally based on specified meal percentages, ensuring varied recipe selection for each meal of the day week.
         /// </summary>
         /// <param name="httpContext">The <see cref="HttpContext"/> object used to extract the user ID from the JWT token in the request header.</param>
         /// <param name="meals">An instance of <see cref="MealsDto"/> containing preferences, nutritional goals, 
@@ -52,8 +52,6 @@ namespace MealPlaner.CRUD
         /// <returns>Returns a <see cref="List{RecipeUpdateDto}"/> representing an optimized list of recipes for each meal specified in the <paramref name="meals"/> parameter. 
         /// Each recipe is tailored to meet the user's nutritional targets and ingredient preferences.
         /// If the user ID is invalid, returns an empty list.</returns>
-
-
         /// <exception cref="ArgumentException">Thrown if required fields in the <paramref name="meals"/> parameter are missing or invalid.</exception>
         /// <exception cref="InvalidOperationException">Thrown if an error occurs while filtering or selecting optimal recipes.</exception>
         /// <exception cref="Exception">Handles any other general exceptions, rethrowing them for logging or further handling.</exception>
@@ -69,10 +67,12 @@ namespace MealPlaner.CRUD
                 }
 
                 ParallelIngredientFilter filter = new ParallelIngredientFilter(_recipesCollection);
-
+                int[] prev5UsedRecipes = new int[5];
                 UserResponseDto user= await _userCRUD.GetUser(userId);
-                int[] prev5UsedRecipes = user.PreviusRecipeIds.TakeLast(5).ToArray();
-                
+                if (!user.PreviusRecipeIds.IsNullOrEmpty())
+                {
+                     prev5UsedRecipes = user.PreviusRecipeIds.TakeLast(5).ToArray();
+                }
                 List<Recipe> baseRecipes = GlobalVariables.Recipes;
                 List<RecipeUpdateDto>? optimalRecipes = new List<RecipeUpdateDto> { };
                 //excluding the previus 5 used recipes form the db
@@ -103,14 +103,15 @@ namespace MealPlaner.CRUD
                     {
                         mealRecipes = filter.FilterByExcludedIngredients(mealRecipes, mealCharacteristics.MustExclude.ToArray());
                     }
-                    // get the amount of (raw, non procentile) nutrition a meal should consist of
+                    // get the amount of (raw, non procentile) nutrition a meal should consist of mesured in grams and mg
                     var MealNutritionalGoal = getRawNutritionalValue(meals.Goals, mealCharacteristics); 
-                    await NormalizeNutritionalValues(MealNutritionalGoal);
+                    await NormalizeNutritionalValues(MealNutritionalGoal); //based on min max values of nutrition in our db we normalize the goals
                     Stopwatch stopwatch = Stopwatch.StartNew();
                     stopwatch.Start();
                     var foundRecipe = FindOptimalRecipe(mealRecipes, MealNutritionalGoal);
                     stopwatch.Stop();
-                    Console.WriteLine($"time elapsed finding optimar recipe goals: {stopwatch.Elapsed}");
+                    Console.WriteLine($"time elapsed finding optimal recipe goals: {stopwatch.Elapsed}");
+                    //
                     if (foundRecipe != null)
                     {
                         meals.Goals.TargetCarbohydrateContent = meals.Goals.TargetCarbohydrateContent - foundRecipe.CarbohydrateContent / foundRecipe.RecipeServings;
@@ -125,6 +126,7 @@ namespace MealPlaner.CRUD
                     }
                     else
                     {
+                        //could add default values in case of no found recipe 
                         optimalRecipes.Add(new RecipeUpdateDto());
                     }
 
@@ -143,7 +145,7 @@ namespace MealPlaner.CRUD
         /// Calculates the Euclidean distance between each recipe's nutritional properties and the target nutritional goals,
         /// returning the recipe that best matches these goals.
         /// - **Nutritional Matching**: Calculates the Euclidean distance between each recipe’s nutritional values and the target goals,
-        /// ranking recipes by proximity to these goals. This ensures that the recipe selected is nutritionally close to the target values.
+        /// ranking recipes by proximity to these goals. This ensures that the recipe selected is nutritionally close to the target desired values.
         /// - **Random Selection from Top Matches**: From the top five closest matches, selects one recipe at random to introduce slight variation.
         /// </summary>
         /// <param name="recipes">A <see cref="List{Recipe}"/> containing candidate recipes to be evaluated against the nutritional goals.</param>
@@ -155,10 +157,18 @@ namespace MealPlaner.CRUD
 
         private Recipe FindOptimalRecipe(List<Recipe> recipes, NutritionalGoals normalizedNutritionalGoals)
         {
-            var recs = recipes.Select(recipe =>
-            {
                 var RecipeProperties = typeof(Recipe).GetProperties().Where(p => p.Name.EndsWith("_MinMax"));
                 var normalizedNutritionalGoalsProperties = typeof(NutritionalGoals).GetProperties();
+                var goalValues = normalizedNutritionalGoalsProperties.ToDictionary(
+                p => p.Name,
+                p => (double)p.GetValue(normalizedNutritionalGoals)        
+                );
+                var normalizedNutritionalGoalsPropertieNames = normalizedNutritionalGoalsProperties.ToDictionary(
+                    p => p.Name.Replace("Target", "") + "_MinMax",
+                    p => p.Name
+                );
+            var recs = recipes.Select(recipe =>
+            {
                 Dictionary<string, object> propertyDictionary = new Dictionary<string, object>();
                 double euclidianDistance = 0;
                 double sumOfSquares = 0;
@@ -169,11 +179,10 @@ namespace MealPlaner.CRUD
                         propertyDictionary[property.Name] = property.GetValue(recipe);
                     }
                 }
-                foreach (var property in normalizedNutritionalGoalsProperties)
+                foreach (var (normalizedName,goalName) in normalizedNutritionalGoalsPropertieNames)
                 {
-                    var normTargetNutritionalValue = (double)property.GetValue(normalizedNutritionalGoals);
-                    string key = $"{property.Name.Replace("Target", "")}_MinMax";
-                    if (propertyDictionary.TryGetValue(key, out object RecipeNutValue))
+
+                    if (propertyDictionary.TryGetValue(normalizedName, out object RecipeNutValue) && goalValues.TryGetValue(goalName, out var normTargetNutritionalValue))
                     {
                         if (double.TryParse(RecipeNutValue?.ToString(), out double recipeNutValueParsed))
                         {
@@ -193,6 +202,12 @@ namespace MealPlaner.CRUD
             return optimalRecipe;
 
         }
+        /// <summary>
+        /// gets the raw nutritional value for each nutrient considering the goal and proportional destribution
+        /// </summary>
+        /// <param name="dailyGoal"></param>
+        /// <param name="mealCharacteristics"></param>
+        /// <returns></returns>
         private NutritionalGoals getRawNutritionalValue(NutritionalGoals dailyGoal, MealCharacteristics mealCharacteristics)
         {
             NutritionalGoals mealGoal = new NutritionalGoals
@@ -210,24 +225,23 @@ namespace MealPlaner.CRUD
             return mealGoal;
         }
         /// <summary>
-        /// Calculates the raw nutritional values for a single meal based on the user's  nutritional goals
-        /// and the specified proportions for each nutrient in the meal characteristics.
-        /// This method generates a specific nutritional target for an individual meal by multiplying each component of the 
-        /// spevified goal by the corresponding target percentage in the meal characteristics. This allows for tailored meal planning
-        /// that aligns with nutritional objectives.
+        /// Normalizes the nutritional values within a <see cref="NutritionalGoals"/> object by scaling each target nutritional property 
+        /// to a range based on its minimum and maximum values across the dataset. This process ensures consistent comparison across recipes.
         /// </summary>
-        /// <param name="dailyGoal">An instance of <see cref="NutritionalGoals"/> representing the user's total nutritional goals.</param>
-        /// <param name="mealCharacteristics">An instance of <see cref="MealCharacteristics"/> containing target proportions 
-        /// for each nutritional component, defining the percentage of the daily goal that each meal should fulfill.</param>
-        /// <returns>Returns a <see cref="NutritionalGoals"/> object containing the calculated nutritional targets for the meal,
-        /// with each nutrient adjusted according to the specified proportions in <paramref name="mealCharacteristics"/>.</returns>
-        /// <exception cref="ArgumentNullException">Thrown if <paramref name="dailyGoal"/> or <paramref name="mealCharacteristics"/> is null.</exception>
+        /// <param name="rawMealNutritionalValues">An instance of <see cref="NutritionalGoals"/> containing the raw nutritional target values for a meal.</param>
+        /// <returns>Returns a boolean value indicating whether the normalization process was successful.</returns>
+        /// <remarks>
+        /// - **Normalization Process**: For each nutritional property in `rawMealNutritionalValues`, retrieves the min and max values and normalizes the target values.
+        /// - **Dynamic Property Access**: Uses reflection to access and modify properties, ensuring flexibility if new properties are added to `NutritionalGoals`.
+        /// - **Performance Measurement**: Logs the time taken for normalization, including min and max value retrieval times, to help with performance optimization.
+        /// </remarks>
+        /// <exception cref="Exception">Catches and logs any exceptions encountered during normalization, returning false to indicate failure.</exception>
         private async Task<bool> NormalizeNutritionalValues(NutritionalGoals rawMealNutritionalValues)
         {
             try
             {
-                Stopwatch stopwatch = new Stopwatch { };
-                stopwatch.Start();
+                Stopwatch stopwatchs = new Stopwatch { };
+                stopwatchs.Start();
                 var properties = typeof(NutritionalGoals).GetProperties();
                 foreach (var item in properties)
                 {
@@ -238,21 +252,21 @@ namespace MealPlaner.CRUD
                     {
                         propertyName = propertyName.Substring("Target".Length);
                     }
-
+                    Stopwatch stopwatch = new Stopwatch { };
                     stopwatch.Start();
                     var minValue = await GetMinValueAsync(propertyName);
                     stopwatch.Stop();
-                    //Console.WriteLine($"Time Elapsed getting min value {stopwatch.Elapsed}");
-                    //Stopwatch stopwatch1 = new Stopwatch();
-                    //stopwatch1.Start();
+                    Console.WriteLine($"Time Elapsed getting min value {stopwatch.Elapsed}");
+                    Stopwatch stopwatch1 = new Stopwatch();
+                    stopwatch1.Start();
                     var maxValue = await GetMaxValueAsync(propertyName);
-                    //stopwatch1.Stop();
-                    //Console.WriteLine($" Time Elapsed getting max value: {stopwatch1.Elapsed}");
+                    stopwatch1.Stop();
+                    Console.WriteLine($" Time Elapsed getting max value: {stopwatch1.Elapsed}");
                     var orginalValue = (double)item.GetValue(rawMealNutritionalValues);
                     item.SetValue(rawMealNutritionalValues, getNormalizedValue(orginalValue, maxValue, minValue, 1.0));
                 }
-                stopwatch.Stop();
-                Console.WriteLine($"time spent normalizing nutritional values: {stopwatch.Elapsed}");
+                stopwatchs.Stop();
+                Console.WriteLine($"time spent normalizing nutritional values: {stopwatchs.Elapsed}");
                 return true;
             }
             catch (Exception ex)
@@ -307,78 +321,100 @@ namespace MealPlaner.CRUD
             stopwatch.Stop();
             Console.WriteLine($"time spent  creating ranged values: {stopwatch.Elapsed}");
         }
+        /// <summary>
+        /// Creates new recipes in the database based on the provided recipe data, calculating and normalizing nutritional values for each recipe.
+        /// Each recipe receives a unique ID and nutritional values are normalized based on existing dataset min and max values.
+        /// </summary>
+        /// <param name="recipesDto">A list of <see cref="RecipeDto"/> objects containing the details of each recipe to be created,
+        /// including ingredients, instructions, servings, and nutritional content.</param>
+        /// <returns>Returns a <see cref="List{RecipeUpdateDto}"/> containing the created recipes with normalized nutritional values and assigned IDs.</returns>
+        /// <remarks>
+        /// - **Normalization**: Each nutritional component (e.g., calories, fat, protein) is normalized based on the min and max values across the dataset, 
+        /// allowing for consistent comparisons. The normalized values are calculated using per-serving values.
+        /// - **Unique ID Assignment**: Generates unique IDs for each recipe, based on the maximum `RecipeId` value currently in the database.
+        /// - **Batch Insertion**: Inserts all new recipes into the database in a single batch for optimized performance.
+        /// </remarks>
 
         public async Task<List<RecipeUpdateDto>> CreateRecipe(List<RecipeDto> recipesDto)
         {
-            var CaloriesMaxValue = await GetMaxValueAsync("Calories");
-            var CaloriesMinValue = await GetMinValueAsync("Calories");
-            var FatContentMaxValue = await GetMaxValueAsync("FatContent");
-            var FatContentMinValue = await GetMinValueAsync("FatContent");
-            var SaturatedFatContentMaxValue = await GetMaxValueAsync("SaturatedFatContent");
-            var SaturatedFatContentMinValue = await GetMinValueAsync("SaturatedFatContent");
-            var CholesterolContentMaxValue = await GetMaxValueAsync("CholesterolContent");
-            var CholesterolContentMinValue = await GetMinValueAsync("CholesterolContent");
-            var SodiumContentMaxValue = await GetMaxValueAsync("SodiumContent");
-            var SodiumContentMinValue = await GetMinValueAsync("SodiumContent");
-            var CarbohydrateContentMaxValue = await GetMaxValueAsync("CarbohydrateContent");
-            var CarbohydrateContentMinValue = await GetMinValueAsync("CarbohydrateContent");
-            var FiberContentMaxValue = await GetMaxValueAsync("FiberContent");
-            var FiberContentMinValue = await GetMinValueAsync("FiberContent");
-            var SugarContentMaxValue = await GetMaxValueAsync("SugarContent");
-            var SugarContentMinValue = await GetMinValueAsync("SugarContent");
-            var ProteinContentMaxValue = await GetMaxValueAsync("ProteinContent");
-            var ProteinContentMinValue = await GetMinValueAsync("ProteinContent");
-            var lastId = System.Convert.ToInt32(System.Math.Floor(await GetMaxValueAsync("RecipeId")));
-            List<Recipe> recipesToInsert = new List<Recipe>();
-            List<RecipeUpdateDto> recipesResponse = new List<RecipeUpdateDto>();
-            foreach(var recipeDto in recipesDto)
+            try
             {
-                Recipe recipe = new Recipe
+
+                var CaloriesMaxValue = await GetMaxValueAsync("Calories");
+                var CaloriesMinValue = await GetMinValueAsync("Calories");
+                var FatContentMaxValue = await GetMaxValueAsync("FatContent");
+                var FatContentMinValue = await GetMinValueAsync("FatContent");
+                var SaturatedFatContentMaxValue = await GetMaxValueAsync("SaturatedFatContent");
+                var SaturatedFatContentMinValue = await GetMinValueAsync("SaturatedFatContent");
+                var CholesterolContentMaxValue = await GetMaxValueAsync("CholesterolContent");
+                var CholesterolContentMinValue = await GetMinValueAsync("CholesterolContent");
+                var SodiumContentMaxValue = await GetMaxValueAsync("SodiumContent");
+                var SodiumContentMinValue = await GetMinValueAsync("SodiumContent");
+                var CarbohydrateContentMaxValue = await GetMaxValueAsync("CarbohydrateContent");
+                var CarbohydrateContentMinValue = await GetMinValueAsync("CarbohydrateContent");
+                var FiberContentMaxValue = await GetMaxValueAsync("FiberContent");
+                var FiberContentMinValue = await GetMinValueAsync("FiberContent");
+                var SugarContentMaxValue = await GetMaxValueAsync("SugarContent");
+                var SugarContentMinValue = await GetMinValueAsync("SugarContent");
+                var ProteinContentMaxValue = await GetMaxValueAsync("ProteinContent");
+                var ProteinContentMinValue = await GetMinValueAsync("ProteinContent");
+                var lastId = System.Convert.ToInt32(System.Math.Floor(await GetMaxValueAsync("RecipeId")));
+                List<Recipe> recipesToInsert = new List<Recipe>();
+                List<RecipeUpdateDto> recipesResponse = new List<RecipeUpdateDto>();
+                foreach (var recipeDto in recipesDto)
                 {
-                    RecipeId = (lastId + 1),
-                    Name = recipeDto.Name,
-                    Keywords = recipeDto.Keywords,
-                    RecipeCategory = recipeDto.RecipeCategory,
-                    ingredients_raw = recipeDto.ingredients_raw,
-                    RecipeIngredientParts = recipeDto.RecipeIngredientParts,
-                    RecipeInstructions = recipeDto.RecipeInstructions,
-                    RecipeServings = recipeDto.RecipeServings,
-                    CookTime = recipeDto.CookTime ?? "",
-                    RecipeYield = recipeDto.RecipeYield ?? "",
-                    PrepTime = recipeDto.PrepTime ?? "",
-                    TotalTime = recipeDto.TotalTime ?? "",
+                    Recipe recipe = new Recipe
+                    {
+                        RecipeId = (lastId + 1),
+                        Name = recipeDto.Name,
+                        Keywords = recipeDto.Keywords,
+                        RecipeCategory = recipeDto.RecipeCategory,
+                        ingredients_raw = recipeDto.ingredients_raw,
+                        RecipeIngredientParts = recipeDto.RecipeIngredientParts,
+                        RecipeInstructions = recipeDto.RecipeInstructions,
+                        RecipeServings = recipeDto.RecipeServings,
+                        CookTime = recipeDto.CookTime ?? "",
+                        RecipeYield = recipeDto.RecipeYield ?? "",
+                        PrepTime = recipeDto.PrepTime ?? "",
+                        TotalTime = recipeDto.TotalTime ?? "",
 
 
-                    Calories = recipeDto.TotalCalories,
-                    FatContent = recipeDto.TotalFatContent,
-                    SaturatedFatContent = recipeDto.TotalSaturatedFatContent,
-                    CholesterolContent = recipeDto.TotalCholesterolContent,
-                    SodiumContent = recipeDto.TotalSodiumContent,
-                    CarbohydrateContent = recipeDto.TotalCarbohydrateContent,
-                    FiberContent = recipeDto.TotalFiberContent,
-                    SugarContent = recipeDto.TotalSugarContent,
-                    ProteinContent = recipeDto.TotalProteinContent,
+                        Calories = recipeDto.TotalCalories,
+                        FatContent = recipeDto.TotalFatContent,
+                        SaturatedFatContent = recipeDto.TotalSaturatedFatContent,
+                        CholesterolContent = recipeDto.TotalCholesterolContent,
+                        SodiumContent = recipeDto.TotalSodiumContent,
+                        CarbohydrateContent = recipeDto.TotalCarbohydrateContent,
+                        FiberContent = recipeDto.TotalFiberContent,
+                        SugarContent = recipeDto.TotalSugarContent,
+                        ProteinContent = recipeDto.TotalProteinContent,
 
-                    Calories_MinMax = getNormalizedValue(recipeDto.TotalCalories, CaloriesMaxValue, CaloriesMinValue, recipeDto.RecipeServings),
-                    FatContent_MinMax = getNormalizedValue(recipeDto.TotalFatContent, FatContentMaxValue, FatContentMinValue, recipeDto.RecipeServings),
-                    SaturatedFatContent_MinMax = getNormalizedValue(recipeDto.TotalSaturatedFatContent, SaturatedFatContentMaxValue, SaturatedFatContentMinValue, recipeDto.RecipeServings),
-                    CholesterolContent_MinMax = getNormalizedValue(recipeDto.TotalCholesterolContent, CholesterolContentMaxValue, CholesterolContentMinValue, recipeDto.RecipeServings),
-                    SodiumContent_MinMax = getNormalizedValue(recipeDto.TotalSodiumContent, SodiumContentMaxValue, SodiumContentMinValue, recipeDto.RecipeServings),
-                    CarbohydrateContent_MinMax = getNormalizedValue(recipeDto.TotalCarbohydrateContent, CarbohydrateContentMaxValue, CarbohydrateContentMinValue, recipeDto.RecipeServings),
-                    FiberContent_MinMax = getNormalizedValue(recipeDto.TotalFiberContent, FiberContentMaxValue, FiberContentMinValue, recipeDto.RecipeServings),
-                    SugarContent_MinMax = getNormalizedValue(recipeDto.TotalSugarContent, SugarContentMaxValue, SugarContentMinValue, recipeDto.RecipeServings),
-                    ProteinContent_MinMax = getNormalizedValue(recipeDto.TotalProteinContent, ProteinContentMaxValue, ProteinContentMinValue, recipeDto.RecipeServings),
-                };
-                recipesToInsert.Add(recipe);
-                var cleanRecipe = new RecipeUpdateDto(recipe);
-                recipesResponse.Add(cleanRecipe);
-                lastId++;
+                        Calories_MinMax = getNormalizedValue(recipeDto.TotalCalories, CaloriesMaxValue, CaloriesMinValue, recipeDto.RecipeServings),
+                        FatContent_MinMax = getNormalizedValue(recipeDto.TotalFatContent, FatContentMaxValue, FatContentMinValue, recipeDto.RecipeServings),
+                        SaturatedFatContent_MinMax = getNormalizedValue(recipeDto.TotalSaturatedFatContent, SaturatedFatContentMaxValue, SaturatedFatContentMinValue, recipeDto.RecipeServings),
+                        CholesterolContent_MinMax = getNormalizedValue(recipeDto.TotalCholesterolContent, CholesterolContentMaxValue, CholesterolContentMinValue, recipeDto.RecipeServings),
+                        SodiumContent_MinMax = getNormalizedValue(recipeDto.TotalSodiumContent, SodiumContentMaxValue, SodiumContentMinValue, recipeDto.RecipeServings),
+                        CarbohydrateContent_MinMax = getNormalizedValue(recipeDto.TotalCarbohydrateContent, CarbohydrateContentMaxValue, CarbohydrateContentMinValue, recipeDto.RecipeServings),
+                        FiberContent_MinMax = getNormalizedValue(recipeDto.TotalFiberContent, FiberContentMaxValue, FiberContentMinValue, recipeDto.RecipeServings),
+                        SugarContent_MinMax = getNormalizedValue(recipeDto.TotalSugarContent, SugarContentMaxValue, SugarContentMinValue, recipeDto.RecipeServings),
+                        ProteinContent_MinMax = getNormalizedValue(recipeDto.TotalProteinContent, ProteinContentMaxValue, ProteinContentMinValue, recipeDto.RecipeServings),
+                    };
+                    recipesToInsert.Add(recipe);
+                    var cleanRecipe = new RecipeUpdateDto(recipe);
+                    recipesResponse.Add(cleanRecipe);
+                    lastId++;
 
+                }
+
+                await _recipesCollection.InsertManyAsync(recipesToInsert);
+
+                return recipesResponse;
             }
-
-            await _recipesCollection.InsertManyAsync(recipesToInsert);
-
-            return recipesResponse;
+            catch (Exception ex)
+            {
+                _logger.LogError($"error occured while creating recipe: {ex.Message}",ex);
+                throw;
+            }
         }
         /// <summary>
         /// Normalizes a nutritional value based on the maximum and minimum values within the dataset,
@@ -442,7 +478,7 @@ namespace MealPlaner.CRUD
             }
             catch (Exception ex)
             {
-                _logger.LogError($"exception during deletion : {ex.Message}");
+                _logger.LogError($"exception during deletion of recipe{id} : {ex.Message}",ex);
                 throw;
             }
 
@@ -627,36 +663,6 @@ namespace MealPlaner.CRUD
 
         }
 
-
-
-
-
-
-        public (bool checkRquest, PagedQuerryResult result) GetRecipes(int page, int pageSize)
-        {
-            try
-            {
-                PagedQuerryResult querryResult = new PagedQuerryResult { };
-                List<Recipe> result = new List<Recipe>();
-
-
-
-                result = GlobalVariables.Recipes.Skip((page - 1) * pageSize).Take(pageSize).ToList();
-
-                querryResult.TotalItems = GlobalVariables.Recipes.Count();
-                querryResult.Recipes = result;
-                querryResult.TotalPages = GlobalVariables.Recipes.Count() / pageSize;
-                querryResult.PageSize = pageSize;
-                querryResult.Page = page;
-
-                return (true, querryResult);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError($"an exception was cought while getting all recipes  : {ex.Message}");
-                throw;
-            }
-        }
         /// <summary>
         /// Updates an existing recipe in the database based on the provided `RecipeUpdateDto`.
         /// If changes are detected, the method updates only modified fields, ensuring efficient database operations.
