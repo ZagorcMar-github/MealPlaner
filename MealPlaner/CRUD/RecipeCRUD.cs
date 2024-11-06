@@ -272,7 +272,6 @@ namespace MealPlaner.CRUD
             catch (Exception ex)
             {
                 return false;
-
             }
         }
         /// <summary>
@@ -597,11 +596,11 @@ namespace MealPlaner.CRUD
 
 
                     List<Recipe> cachedFilteredRecipes = filteredRecipes.Skip((page - 1) * pageSize).Take(pageSize).ToList();
-
+                    List<RecipeUpdateDto> cachedFilteredRecipesU = cachedFilteredRecipes.Select(x => new RecipeUpdateDto(x)).ToList();
 
                     PagedQuerryResult cachedFilteredResult = new PagedQuerryResult
                     {
-                        Recipes = cachedFilteredRecipes,
+                        Recipes = cachedFilteredRecipesU,
                         Page = page,
                         PageSize = pageSize,
                         TotalItems = filteredRecipes.Count,
@@ -641,11 +640,12 @@ namespace MealPlaner.CRUD
                 }
 
                 List<Recipe> pagedList = filteredList.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+                List<RecipeUpdateDto> pagedListU = pagedList.Select(x=> new RecipeUpdateDto(x)).ToList();
                 querryResult.TotalItems = filteredList.Count;
                 querryResult.TotalPages = (int)Math.Ceiling((double)filteredList.Count / pageSize); ;
                 querryResult.PageSize = totalItems;
                 querryResult.Page = page;
-                querryResult.Recipes = pagedList;
+                querryResult.Recipes = pagedListU;
 
 
 
