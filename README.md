@@ -92,8 +92,8 @@ Endpoints
 Recipes
 /api/Recipe/getRecipe/{id}
 
-
 /api/Recipe/UpdateRecipe
+
     request body:
     {
       "name": "string",
@@ -131,6 +131,7 @@ Recipes
 
 
 /api/Recipe/CreateRecipe
+
     request body:
     [
       {
@@ -166,6 +167,7 @@ Recipes
     ]
 
 /api/Recipe/GenerateMealPlan
+
     request body:
     {
       "preferences": [
@@ -235,6 +237,7 @@ Recipes
     //"aditionalProp1/2/3" : are your given names of meals
 
 /api/Recipe/getFilteredRecipes?page=&pageLimit=
+
     requestBody:
     {
       "desiredIngredientMatchPercentage": 0,
@@ -270,6 +273,7 @@ USER:
 
 
 /api/User/UpdateUser
+
     request Body:{
       "age": 0,
       "username": "string",
@@ -296,6 +300,7 @@ USER:
 
 
 /api/User/CreateUser
+
     request body:{
       "age": 0,
       "username": "string",
@@ -309,6 +314,7 @@ USER:
     }
 
 /api/User/AuthenticateUser
+
     request body:{
       "username": "string",
       "password": "string"
