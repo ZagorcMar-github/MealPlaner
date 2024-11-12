@@ -89,5 +89,227 @@ recipeFormat:
     }
 Endpoints
 
+Recipes
+/api/Recipe/getRecipe/{id}
 
 
+/api/Recipe/UpdateRecipe
+request body:
+{
+  "name": "string",
+  "cookTime": "string",
+  "prepTime": "string",
+  "totalTime": "string",
+  "recipeCategory": "string",
+  "keywords": [
+    "string"
+  ],
+  "recipeIngredientParts": [
+    "string"
+  ],
+  "totalCalories": 0,
+  "totalFatContent": 0,
+  "totalSaturatedFatContent": 0,
+  "totalCholesterolContent": 0,
+  "totalSodiumContent": 0,
+  "totalCarbohydrateContent": 0,
+  "totalFiberContent": 0,
+  "totalSugarContent": 0,
+  "totalProteinContent": 0,
+  "recipeServings": 0,
+  "recipeYield": "string",
+  "recipeInstructions": [
+    "string"
+  ],
+  "ingredients_raw": [
+    "string"
+  ],
+  "recipeId": 0
+}
+
+/api/Recipe/DeleteRecipe
+
+
+/api/Recipe/CreateRecipe
+request body
+[
+  {
+    "name": "string",
+    "cookTime": "string",
+    "prepTime": "string",
+    "totalTime": "string",
+    "recipeCategory": "string",
+    "keywords": [
+      "string"
+    ],
+    "recipeIngredientParts": [
+      "string"
+    ],
+    "totalCalories": 0,
+    "totalFatContent": 0,
+    "totalSaturatedFatContent": 0,
+    "totalCholesterolContent": 0,
+    "totalSodiumContent": 0,
+    "totalCarbohydrateContent": 0,
+    "totalFiberContent": 0,
+    "totalSugarContent": 0,
+    "totalProteinContent": 0,
+    "recipeServings": 0,
+    "recipeYield": "string",
+    "recipeInstructions": [
+      "string"
+    ],
+    "ingredients_raw": [
+      "string"
+    ]
+  }
+]
+
+/api/Recipe/GenerateMealPlan
+request body:
+{
+  "preferences": [
+    "string"
+  ],
+  "goals": {
+    "targetCalories": 0,
+    "targetFiberContent": 0,
+    "targetFatContent": 0,
+    "targetSaturatedFatContent": 0,
+    "targetSugarContent": 0,
+    "targetProteinContent": 0,
+    "targetCarbohydrateContent": 0,
+    "targetCholesterolContent": 0
+  },
+  "meals": {
+    "additionalProp1": {
+      "mustInclude": [
+        "string"
+      ],
+      "mustExclude": [
+        "string"
+      ],
+      "targetCalorieProcent": 0,
+      "targetFiberProcent": 0,
+      "targetFatProcent": 0,
+      "targetSaturatedFatProcent": 0,
+      "targetSugarProcent": 0,
+      "targetProteinProcent": 0,
+      "targetCarbohydrateProcent": 0,
+      "targetCholesterolProcent": 0
+    },
+    "additionalProp2": {
+      "mustInclude": [
+        "string"
+      ],
+      "mustExclude": [
+        "string"
+      ],
+      "targetCalorieProcent": 0,
+      "targetFiberProcent": 0,
+      "targetFatProcent": 0,
+      "targetSaturatedFatProcent": 0,
+      "targetSugarProcent": 0,
+      "targetProteinProcent": 0,
+      "targetCarbohydrateProcent": 0,
+      "targetCholesterolProcent": 0
+    },
+    "additionalProp3": {
+      "mustInclude": [
+        "string"
+      ],
+      "mustExclude": [
+        "string"
+      ],
+      "targetCalorieProcent": 0,
+      "targetFiberProcent": 0,
+      "targetFatProcent": 0,
+      "targetSaturatedFatProcent": 0,
+      "targetSugarProcent": 0,
+      "targetProteinProcent": 0,
+      "targetCarbohydrateProcent": 0,
+      "targetCholesterolProcent": 0
+    }
+  }
+} 
+//"aditionalProp1/2/3" : are your given names of meals
+
+/api/Recipe/getFilteredRecipes?page=&pageLimit=
+requestBody:
+{
+  "desiredIngredientMatchPercentage": 0,
+  "keywords": [
+    "string"
+  ],
+  "ingredients": [
+    "string"
+  ],
+  "excludeIngredients": [
+    "string"
+  ]
+
+
+/api/Recipe/GetRecipesWithName
+
+
+/api/Recipe/GetUniquePreferenceTypes
+
+
+/api/Recipe/GetUniqueIngredients
+
+
+USER:
+
+/api/User/getUser/{id}
+
+
+/api/User/getUserByUsername/{username}
+
+
+/api/User/getUserByEmail/{email}
+
+
+/api/User/UpdateUser
+request Body:{
+  "age": 0,
+  "username": "string",
+  "email": "user@example.com",
+  "password": "string",
+  "heightCm": 0,
+  "weightKg": 0,
+  "name": "string",
+  "subscription": "string",
+  "admin": "string",
+  "userId": 0,
+  "previusRecipeIds": [
+    0
+  ]
+}
+
+/api/User/UpdateUserRecipeIds?userId=
+request body:
+[
+  0
+]
+
+/api/User/DeleteUser
+
+
+/api/User/CreateUser
+request body:{
+  "age": 0,
+  "username": "string",
+  "email": "user@example.com",
+  "password": "string",
+  "heightCm": 0,
+  "weightKg": 0,
+  "name": "string",
+  "subscription": "string",
+  "admin": "string"
+}
+
+/api/User/AuthenticateUser
+request body:{
+  "username": "string",
+  "password": "string"
+}
